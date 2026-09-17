@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f3f0e8" />
+    <meta
+      name="description"
+      content="Train a tiny flow-matching neural network in your browser and watch it transport noise into a checkerboard."
+    />
+    <title>Flow Playground — Browser Flow Matching</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="site-header">
+        <a class="brand" href="#" aria-label="Flow Playground home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Flow Playground</span>
+        </a>
+        <div class="header-meta">
+          <span>Experiment 01</span>
+          <span class="live-indicator"><i></i> Local compute</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="intro">
+          <div>
+            <p class="eyebrow">A tiny generative model, training live</p>
+            <h1>Turn noise into<br /><em>structure.</em></h1>
+          </div>
+          <p class="intro-copy">
+            This 3-layer neural network learns a velocity field that carries Gaussian noise into a checkerboard—entirely in your browser.
+          </p>
+        </section>
+
+        <section class="workspace" aria-label="Flow matching experiment">
+          <article class="visualizer-card">
+            <div class="card-heading">
+              <div>
+                <p class="label">Learned transport</p>
+                <h2>Particle field</h2>
+              </div>
+              <div class="phase-pill"><span id="phaseDot"></span><span id="phaseLabel">Training</span></div>
+            </div>
+
+            <div class="canvas-shell">
+              <canvas id="flowCanvas" aria-label="Animated particles moving from Gaussian noise to a checkerboard"></canvas>
+              <div class="canvas-label canvas-label-source">Gaussian source</div>
+              <div class="canvas-label canvas-label-target">Checkerboard target</div>
+              <button id="resampleButton" class="canvas-action" type="button" aria-label="Resample particles" title="Resample particles">
+                <span aria-hidden="true">↻</span> New particles
+              </button>
+            </div>
+
+            <div class="timeline">
+              <span class="time-label">t = <output id="timeOutput">0.00</output></span>
+              <input id="timeSlider" type="range" min="0" max="1" value="0" step="0.001" aria-label="Transport time" />
+              <button id="flowToggle" class="icon-button" type="button" aria-label="Pause particle animation"><span aria-hidden="true">Ⅱ</span></button>
+            </div>
+
+            <div class="legend" aria-hidden="true">
+              <span><i class="dot dot-particle"></i>Particles</span>
+              <span><i class="line line-field"></i>Learned velocity</span>
+              <span><i class="tile"></i>Target density</span>
+            </div>
+          </article>
+
+          <aside class="training-card">
+            <div class="card-heading">
+              <div>
+                <p class="label">Model telemetry</p>
+                <h2>Training</h2>
+              </div>
+              <button id="resetButton" class="text-button" type="button">Reset model</button>
+            </div>
+
+            <div class="metrics">
+              <div class="metric"><span>Step</span><strong id="stepMetric">0</strong></div>
+              <div class="metric"><span>Loss</span><strong id="lossMetric">—</strong></div>
+              <div class="metric"><span>Speed</span><strong><span id="speedMetric">—</span><small> step/s</small></strong></div>
+            </div>
+
+            <div class="loss-panel">
+              <div class="loss-title"><span>Training loss</span><span id="lossTrend">Collecting data</span></div>
+              <canvas id="lossCanvas" aria-label="Training loss over time"></canvas>
+            </div>
+
+            <div class="model-summary">
+              <div class="summary-row"><span>Architecture</span><strong>3 → 64 → 64 → 2</strong></div>
+              <div class="summary-row"><span>Parameters</span><strong>4,546</strong></div>
+              <div class="summary-row"><span>Optimizer</span><strong>Adam · 2e−3</strong></div>
+              <div class="summary-row"><span>Batch size</span><strong>96</strong></div>
+            </div>
+
+            <div class="training-control">
+              <div>
+                <span class="control-title">Training loop</span>
+                <span class="control-subtitle" id="trainingStatus">Running on the main thread</span>
+              </div>
+              <button id="trainingToggle" class="primary-button" type="button"><span aria-hidden="true">Ⅱ</span> Pause</button>
+            </div>
+          </aside>
+        </section>
+
+        <section class="explanation" aria-labelledby="explanationTitle">
+          <div class="explanation-heading">
+            <p class="eyebrow">What you’re watching</p>
+            <h2 id="explanationTitle">One path, learned from pairs.</h2>
+          </div>
+          <div class="steps">
+            <article>
+              <span class="step-number">01</span>
+              <h3>Pair</h3>
+              <p>Sample a point from Gaussian noise and one from the checkerboard.</p>
+            </article>
+            <article>
+              <span class="step-number">02</span>
+              <h3>Interpolate</h3>
+              <p>Pick a random time and place the point along the straight path between them.</p>
+            </article>
+            <article>
+              <span class="step-number">03</span>
+              <h3>Learn</h3>
+              <p>Train the MLP to predict the velocity that continues that journey.</p>
+            </article>
+          </div>
+          <div class="equation" aria-label="Flow matching training equations">
+            <span>x<sub>t</sub> = (1 − t)x<sub>0</sub> + tx<sub>1</sub></span>
+            <i></i>
+            <span>v<sub>θ</sub>(x<sub>t</sub>, t) ≈ x<sub>1</sub> − x<sub>0</sub></span>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>Everything here runs on your device.</span>
+        <span>No data leaves this page.</span>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
