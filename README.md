@@ -21,6 +21,6 @@ Open `http://localhost:5173`.
 - Model: `17 → 64 → 64 → 2` tanh MLP with general multiscale spatial and temporal Fourier features
 - Time sampling: half uniform, half biased toward the sharp terminal distribution
 - Optimizer: Adam, implemented with typed arrays
-- Sampling: Euler integration with a shared, configurable 1, 10, or 100 steps for animation and scrubbing
+- Sampling: Euler integration with a shared, configurable 1, 10, or 100 checkpoints for animation and scrubbing; playback shows only real solver states
 
 There are no ML runtime dependencies. Training, backpropagation, optimization, and inference are implemented directly in `src/main.js`, which makes the target sampler easy to replace with a drawn point distribution later.

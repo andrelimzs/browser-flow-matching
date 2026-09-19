@@ -242,6 +242,8 @@ let model = new TinyMLP();
 let training = true;
 let flowPlaying = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 let simTime = 0;
+let playbackTime = 0;
+let lastInferenceCheckpoint = 0;
 let holdUntil = 0;
 let particles = [];
 let lossHistory = [];
@@ -270,6 +272,8 @@ function resetParticles() {
   });
   buildParticlePaths();
   simTime = 0;
+  playbackTime = 0;
+  lastInferenceCheckpoint = 0;
   holdUntil = 0;
   syncTimeUI();
 }
@@ -290,23 +294,25 @@ function buildParticlePaths() {
   }
 }
 
-function setParticlesTo(time, keepTails = false) {
+function setParticlesTo(time, keepTails = false, rounding = "nearest") {
   const scaledTime = Math.min(inferenceSteps, Math.max(0, time * inferenceSteps));
-  const index = Math.min(inferenceSteps - 1, Math.floor(scaledTime));
-  const fraction = scaledTime >= inferenceSteps ? 1 : scaledTime - index;
+  const checkpoint = Math.min(
+    inferenceSteps,
+    rounding === "floor" ? Math.floor(scaledTime) : Math.round(scaledTime),
+  );
+  const checkpointChanged = checkpoint !== lastInferenceCheckpoint;
   for (const particle of particles) {
-    if (keepTails && model.step > 50) {
+    if (keepTails && checkpointChanged && model.step > 50) {
       particle.tail.push([particle.x, particle.y]);
       if (particle.tail.length > 7) particle.tail.shift();
     } else if (!keepTails) {
       particle.tail = [];
     }
-    const start = particle.path[index];
-    const end = particle.path[Math.min(inferenceSteps, index + 1)];
-    particle.x = start[0] + (end[0] - start[0]) * fraction;
-    particle.y = start[1] + (end[1] - start[1]) * fraction;
+    particle.x = particle.path[checkpoint][0];
+    particle.y = particle.path[checkpoint][1];
   }
-  simTime = time;
+  lastInferenceCheckpoint = checkpoint;
+  simTime = checkpoint / inferenceSteps;
   syncTimeUI();
 }
 
@@ -517,7 +523,10 @@ function animate(now) {
       }
       else if (now >= holdUntil) resetParticles();
     } else {
-      setParticlesTo(Math.min(1, simTime + elapsed / 6800), true);
+      playbackTime = inferenceSteps === 1
+        ? 1
+        : Math.min(1, playbackTime + elapsed / (inferenceSteps * 60));
+      setParticlesTo(playbackTime, true, "floor");
     }
   }
 
@@ -540,6 +549,7 @@ $("#trainingToggle").addEventListener("click", () => {
 
 $("#flowToggle").addEventListener("click", () => {
   flowPlaying = !flowPlaying;
+  if (flowPlaying) playbackTime = simTime;
   $("#flowToggle").innerHTML = flowPlaying ? '<span aria-hidden="true">Ⅱ</span>' : '<span aria-hidden="true">▶</span>';
   $("#flowToggle").setAttribute("aria-label", flowPlaying ? "Pause particle animation" : "Play particle animation");
 });
@@ -547,7 +557,8 @@ $("#flowToggle").addEventListener("click", () => {
 $("#timeSlider").addEventListener("input", (event) => {
   flowPlaying = false;
   $("#flowToggle").innerHTML = '<span aria-hidden="true">▶</span>';
-  setParticlesTo(Number(event.target.value));
+  playbackTime = Number(event.target.value);
+  setParticlesTo(playbackTime);
 });
 
 $("#timeSlider").addEventListener("pointerdown", () => {
@@ -557,6 +568,7 @@ $("#timeSlider").addEventListener("pointerdown", () => {
 
 document.querySelectorAll("[data-inference-steps]").forEach((button) => {
   button.addEventListener("click", () => {
+    const currentTime = simTime;
     inferenceSteps = Number(button.dataset.inferenceSteps);
     document.querySelectorAll("[data-inference-steps]").forEach((option) => {
       option.setAttribute("aria-pressed", String(option === button));
@@ -564,7 +576,9 @@ document.querySelectorAll("[data-inference-steps]").forEach((button) => {
     $("#inferenceSummary").textContent = `${inferenceSteps} Euler ${inferenceSteps === 1 ? "step" : "steps"}`;
     latestHitRate = null;
     buildParticlePaths();
-    setParticlesTo(simTime);
+    lastInferenceCheckpoint = -1;
+    playbackTime = currentTime;
+    setParticlesTo(playbackTime);
     updateTelemetry();
   });
 });
