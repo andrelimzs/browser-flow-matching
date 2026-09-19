@@ -62,6 +62,15 @@
               <button id="flowToggle" class="icon-button" type="button" aria-label="Pause particle animation"><span aria-hidden="true">Ⅱ</span></button>
             </div>
 
+            <div class="solver-setting">
+              <span>Euler inference steps</span>
+              <div class="step-options" role="group" aria-label="Euler inference steps">
+                <button type="button" data-inference-steps="1" aria-pressed="false">1</button>
+                <button type="button" data-inference-steps="10" aria-pressed="false">10</button>
+                <button type="button" data-inference-steps="100" aria-pressed="true">100</button>
+              </div>
+            </div>
+
             <div class="legend" aria-hidden="true">
               <span><i class="dot dot-particle"></i>Particles</span>
               <span><i class="line line-field"></i>Learned velocity</span>
@@ -97,6 +106,7 @@
               <div class="summary-row"><span>Batch size</span><strong>96</strong></div>
               <div class="summary-row"><span>Pairing</span><strong>Minibatch OT</strong></div>
               <div class="summary-row"><span>Time sampling</span><strong>50% terminal-biased</strong></div>
+              <div class="summary-row"><span>Inference</span><strong id="inferenceSummary">100 Euler steps</strong></div>
             </div>
 
             <div class="training-control">

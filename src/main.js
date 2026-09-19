@@ -252,6 +252,7 @@ let telemetryAt = performance.now();
 let telemetrySteps = 0;
 let measuredSpeed = 0;
 let latestHitRate = null;
+let inferenceSteps = 100;
 
 function isInTargetCell(x, y) {
   const edge = 2.36;
@@ -265,39 +266,48 @@ function isInTargetCell(x, y) {
 function resetParticles() {
   particles = Array.from({ length: PARTICLE_COUNT }, () => {
     const [x, y] = sampleSource();
-    return { x, y, x0: x, y0: y, tail: [] };
+    return { x, y, x0: x, y0: y, tail: [], path: [] };
   });
+  buildParticlePaths();
   simTime = 0;
   holdUntil = 0;
   syncTimeUI();
 }
 
-function setParticlesTo(time) {
+function buildParticlePaths() {
+  const dt = 1 / inferenceSteps;
   for (const particle of particles) {
-    particle.x = particle.x0;
-    particle.y = particle.y0;
+    let x = particle.x0;
+    let y = particle.y0;
+    particle.path = [[x, y]];
+    for (let step = 0; step < inferenceSteps; step++) {
+      const [vx, vy] = model.forward(x, y, step * dt);
+      x += vx * dt;
+      y += vy * dt;
+      particle.path.push([x, y]);
+    }
     particle.tail = [];
   }
-  simTime = 0;
-  const steps = Math.max(1, Math.ceil(time * 84));
-  const dt = time / steps;
-  for (let s = 0; s < steps; s++) advanceParticles(dt, false);
-  simTime = time;
-  syncTimeUI();
 }
 
-function advanceParticles(dt, keepTails = true) {
-  if (dt <= 0) return;
-  for (const p of particles) {
-    if (keepTails && model.step > 50 && Math.floor(simTime * 1000) % 4 === 0) {
-      p.tail.push([p.x, p.y]);
-      if (p.tail.length > 7) p.tail.shift();
+function setParticlesTo(time, keepTails = false) {
+  const scaledTime = Math.min(inferenceSteps, Math.max(0, time * inferenceSteps));
+  const index = Math.min(inferenceSteps - 1, Math.floor(scaledTime));
+  const fraction = scaledTime >= inferenceSteps ? 1 : scaledTime - index;
+  for (const particle of particles) {
+    if (keepTails && model.step > 50) {
+      particle.tail.push([particle.x, particle.y]);
+      if (particle.tail.length > 7) particle.tail.shift();
+    } else if (!keepTails) {
+      particle.tail = [];
     }
-    const [vx, vy] = model.forward(p.x, p.y, simTime);
-    p.x += vx * dt;
-    p.y += vy * dt;
+    const start = particle.path[index];
+    const end = particle.path[Math.min(inferenceSteps, index + 1)];
+    particle.x = start[0] + (end[0] - start[0]) * fraction;
+    particle.y = start[1] + (end[1] - start[1]) * fraction;
   }
-  simTime = Math.min(1, simTime + dt);
+  simTime = time;
+  syncTimeUI();
 }
 
 function syncTimeUI() {
@@ -507,8 +517,7 @@ function animate(now) {
       }
       else if (now >= holdUntil) resetParticles();
     } else {
-      advanceParticles(Math.min(0.012, elapsed / 6800));
-      syncTimeUI();
+      setParticlesTo(Math.min(1, simTime + elapsed / 6800), true);
     }
   }
 
@@ -539,6 +548,25 @@ $("#timeSlider").addEventListener("input", (event) => {
   flowPlaying = false;
   $("#flowToggle").innerHTML = '<span aria-hidden="true">▶</span>';
   setParticlesTo(Number(event.target.value));
+});
+
+$("#timeSlider").addEventListener("pointerdown", () => {
+  buildParticlePaths();
+  setParticlesTo(simTime);
+});
+
+document.querySelectorAll("[data-inference-steps]").forEach((button) => {
+  button.addEventListener("click", () => {
+    inferenceSteps = Number(button.dataset.inferenceSteps);
+    document.querySelectorAll("[data-inference-steps]").forEach((option) => {
+      option.setAttribute("aria-pressed", String(option === button));
+    });
+    $("#inferenceSummary").textContent = `${inferenceSteps} Euler ${inferenceSteps === 1 ? "step" : "steps"}`;
+    latestHitRate = null;
+    buildParticlePaths();
+    setParticlesTo(simTime);
+    updateTelemetry();
+  });
 });
 
 $("#resampleButton").addEventListener("click", resetParticles);
