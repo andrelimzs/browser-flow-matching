@@ -207,6 +207,7 @@ let simTime = 0;
 let holdUntil = 0;
 let particles = [];
 let lossHistory = [];
+let lossRecordEvery = 6;
 let smoothedLoss = null;
 let lastFrame = performance.now();
 let telemetryAt = performance.now();
@@ -387,21 +388,47 @@ function drawLoss() {
     const y = (h * i) / 4;
     lossCtx.beginPath(); lossCtx.moveTo(0, y); lossCtx.lineTo(w, y); lossCtx.stroke();
   }
+  const plotTop = 6;
+  const plotBottom = h - 18;
   if (lossHistory.length < 2) return;
-  const recent = lossHistory.slice(-180);
-  const logs = recent.map((v) => Math.log(Math.max(v, 1e-5)));
+  const logs = lossHistory.map((point) => Math.log(Math.max(point.loss, 1e-5)));
   let min = Math.min(...logs);
   let max = Math.max(...logs);
   if (max - min < 0.25) { max += 0.125; min -= 0.125; }
   lossCtx.beginPath();
-  recent.forEach((_, i) => {
-    const x = (i / Math.max(1, recent.length - 1)) * w;
-    const y = h - 9 - ((logs[i] - min) / (max - min)) * (h - 18);
+  lossHistory.forEach((point, i) => {
+    const x = (point.step / Math.max(1, model.step)) * w;
+    const y = plotBottom - ((logs[i] - min) / (max - min)) * (plotBottom - plotTop);
     if (i === 0) lossCtx.moveTo(x, y); else lossCtx.lineTo(x, y);
   });
   lossCtx.strokeStyle = "#1d66db";
   lossCtx.lineWidth = 1.8;
   lossCtx.stroke();
+  lossCtx.fillStyle = "rgba(25, 28, 27, .48)";
+  lossCtx.font = "9px DM Mono, monospace";
+  lossCtx.textAlign = "left";
+  lossCtx.fillText("0", 0, h - 3);
+  lossCtx.textAlign = "right";
+  lossCtx.fillText(model.step.toLocaleString(), w, h - 3);
+}
+
+function recordLoss(loss) {
+  if (model.step === 1) {
+    lossHistory = [{ step: 0, loss }];
+    return;
+  }
+  if (model.step % lossRecordEvery !== 0) return;
+  lossHistory.push({ step: model.step, loss });
+  if (lossHistory.length <= 1200) return;
+
+  const compacted = [lossHistory[0]];
+  for (let i = 1; i < lossHistory.length; i += 2) {
+    const first = lossHistory[i];
+    const second = lossHistory[i + 1];
+    compacted.push(second ? { step: second.step, loss: (first.loss + second.loss) * 0.5 } : first);
+  }
+  lossHistory = compacted;
+  lossRecordEvery *= 2;
 }
 
 function updateTelemetry() {
@@ -410,8 +437,8 @@ function updateTelemetry() {
   $("#speedMetric").textContent = measuredSpeed ? Math.round(measuredSpeed) : "—";
   $("#hitMetric").textContent = latestHitRate === null ? "—" : `${Math.round(latestHitRate * 100)}%`;
   if (lossHistory.length > 12) {
-    const old = lossHistory[Math.max(0, lossHistory.length - 12)];
-    const newest = lossHistory[lossHistory.length - 1];
+    const old = lossHistory[Math.max(0, lossHistory.length - 12)].loss;
+    const newest = lossHistory[lossHistory.length - 1].loss;
     const change = ((newest - old) / old) * 100;
     $("#lossTrend").textContent = change < -1 ? `${Math.abs(change).toFixed(0)}% ↓ recent` : "Stabilizing";
   }
@@ -427,8 +454,7 @@ function animate(now) {
     while (trained < 3 && performance.now() < deadline) {
       const loss = model.trainBatch();
       smoothedLoss = smoothedLoss === null ? loss : smoothedLoss * 0.96 + loss * 0.04;
-      if (model.step % 6 === 0) lossHistory.push(smoothedLoss);
-      if (lossHistory.length > 360) lossHistory.shift();
+      recordLoss(smoothedLoss);
       trained++;
       telemetrySteps++;
     }
@@ -483,6 +509,7 @@ $("#resetButton").addEventListener("click", () => {
   seed = (Date.now() ^ 0x85ebca6b) >>> 0;
   model = new TinyMLP();
   lossHistory = [];
+  lossRecordEvery = 6;
   smoothedLoss = null;
   latestHitRate = null;
   training = true;
