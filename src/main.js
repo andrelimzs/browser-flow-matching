@@ -254,7 +254,7 @@ let telemetryAt = performance.now();
 let telemetrySteps = 0;
 let measuredSpeed = 0;
 let latestHitRate = null;
-let inferenceSteps = 100;
+let inferenceSteps = 20;
 
 function isInTargetCell(x, y) {
   const edge = 2.36;
@@ -409,7 +409,7 @@ function drawFlow() {
   }
 
   for (const p of particles) {
-    if (p.tail.length > 1) {
+    if (p.tail.length > 0) {
       flowCtx.beginPath();
       for (let i = 0; i < p.tail.length; i++) {
         const [tx, ty] = p.tail[i];
