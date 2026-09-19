@@ -43,54 +43,33 @@ function sampleCheckerboard() {
   ];
 }
 
-function squaredDistance(a, b) {
-  const dx = a[0] - b[0];
-  const dy = a[1] - b[1];
-  return dx * dx + dy * dy;
+function normalCDF(value) {
+  const sign = value < 0 ? -1 : 1;
+  const x = Math.abs(value) / Math.sqrt(2);
+  const t = 1 / (1 + 0.3275911 * x);
+  const polynomial = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
+  const erf = sign * (1 - polynomial * Math.exp(-x * x));
+  return Math.min(1 - 1e-7, Math.max(1e-7, 0.5 * (1 + erf)));
 }
 
-// A cheap minibatch optimal-transport approximation. Every source and target is
-// still used exactly once, but nearby points are paired to remove the worst path
-// crossings (and therefore much of the conditional-velocity noise).
-function pairMinibatch(sources, targets) {
-  const order = Array.from({ length: targets.length }, (_, i) => i);
-  for (let i = order.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-
-  const available = Array.from({ length: sources.length }, (_, i) => i);
-  const pairing = new Int16Array(targets.length);
-  for (const targetIndex of order) {
-    let bestSlot = 0;
-    let bestCost = Infinity;
-    for (let slot = 0; slot < available.length; slot++) {
-      const cost = squaredDistance(sources[available[slot]], targets[targetIndex]);
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestSlot = slot;
-      }
-    }
-    pairing[targetIndex] = available[bestSlot];
-    available.splice(bestSlot, 1);
-  }
-
-  // Random 2-opt refinements recover most of the quality of an exact assignment
-  // without putting a cubic-time Hungarian solver in the animation loop.
-  for (let pass = 0; pass < BATCH * 3; pass++) {
-    const a = Math.floor(random() * BATCH);
-    let b = Math.floor(random() * (BATCH - 1));
-    if (b >= a) b++;
-    const sourceA = pairing[a];
-    const sourceB = pairing[b];
-    const current = squaredDistance(sources[sourceA], targets[a]) + squaredDistance(sources[sourceB], targets[b]);
-    const swapped = squaredDistance(sources[sourceB], targets[a]) + squaredDistance(sources[sourceA], targets[b]);
-    if (swapped < current) {
-      pairing[a] = sourceB;
-      pairing[b] = sourceA;
-    }
-  }
-  return pairing;
+// For the built-in checkerboard we can use an exact, stable coupling instead
+// of relearning a different minibatch assignment every step. Gaussian x picks
+// one of the two occupied columns; Gaussian y picks the row. Fractional
+// quantiles remain uniform coordinates inside the selected square.
+function coupleSourceToCheckerboard(source) {
+  const u = normalCDF(source[0] / 0.82);
+  const v = normalCDF(source[1] / 0.82);
+  const side = Math.min(1, Math.floor(u * 2));
+  const row = Math.min(3, Math.floor(v * 4));
+  const col = side * 2 + (row % 2);
+  const localX = u * 2 - side;
+  const localY = v * 4 - row;
+  const cell = 1.18;
+  const span = cell - 0.06;
+  return [
+    (col - 1.5) * cell + (localX - 0.5) * span,
+    (row - 1.5) * cell + (localY - 0.5) * span,
+  ];
 }
 
 function xavier(size, fanIn, fanOut) {
@@ -154,13 +133,15 @@ class TinyMLP {
     const grads = this.grads;
     for (const grad of grads) grad.fill(0);
     const sources = Array.from({ length: BATCH }, sampleSource);
-    const targets = Array.from({ length: BATCH }, sampleCheckerboard);
-    const pairing = pairMinibatch(sources, targets);
+    const targets = sources.map(coupleSourceToCheckerboard);
     let loss = 0;
     for (let n = 0; n < BATCH; n++) {
-      const x0 = sources[pairing[n]];
+      const x0 = sources[n];
       const x1 = targets[n];
-      const time = 0.02 + random() * 0.96;
+      // Keep full-path coverage while spending half the updates near the target,
+      // where the checkerboard's sharp empty-cell boundaries are hardest.
+      const timeSample = random() < 0.5 ? random() : 1 - random() ** 2;
+      const time = 0.02 + timeSample * 0.96;
       const x = x0[0] * (1 - time) + x1[0] * time;
       const y = x0[1] * (1 - time) + x1[1] * time;
       const target0 = x1[0] - x0[0];
@@ -231,6 +212,16 @@ let lastFrame = performance.now();
 let telemetryAt = performance.now();
 let telemetrySteps = 0;
 let measuredSpeed = 0;
+let latestHitRate = null;
+
+function isInTargetCell(x, y) {
+  const edge = 2.36;
+  const cell = 1.18;
+  if (x < -edge || x >= edge || y < -edge || y >= edge) return false;
+  const col = Math.floor((x + edge) / cell);
+  const row = Math.floor((y + edge) / cell);
+  return (row + col) % 2 === 0;
+}
 
 function resetParticles() {
   particles = Array.from({ length: PARTICLE_COUNT }, () => {
@@ -417,6 +408,7 @@ function updateTelemetry() {
   $("#stepMetric").textContent = model.step.toLocaleString();
   $("#lossMetric").textContent = smoothedLoss === null ? "—" : smoothedLoss.toFixed(4);
   $("#speedMetric").textContent = measuredSpeed ? Math.round(measuredSpeed) : "—";
+  $("#hitMetric").textContent = latestHitRate === null ? "—" : `${Math.round(latestHitRate * 100)}%`;
   if (lossHistory.length > 12) {
     const old = lossHistory[Math.max(0, lossHistory.length - 12)];
     const newest = lossHistory[lossHistory.length - 1];
@@ -444,7 +436,11 @@ function animate(now) {
 
   if (flowPlaying) {
     if (simTime >= 1) {
-      if (!holdUntil) holdUntil = now + 800;
+      if (!holdUntil) {
+        latestHitRate = particles.filter((particle) => isInTargetCell(particle.x, particle.y)).length / particles.length;
+        holdUntil = now + 1400;
+        updateTelemetry();
+      }
       else if (now >= holdUntil) resetParticles();
     } else {
       advanceParticles(Math.min(0.012, elapsed / 6800));
@@ -488,6 +484,7 @@ $("#resetButton").addEventListener("click", () => {
   model = new TinyMLP();
   lossHistory = [];
   smoothedLoss = null;
+  latestHitRate = null;
   training = true;
   $("#trainingToggle").innerHTML = '<span aria-hidden="true">Ⅱ</span> Pause';
   $("#trainingStatus").textContent = "Running on the main thread";

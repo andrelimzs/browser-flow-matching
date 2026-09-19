@@ -17,8 +17,9 @@ Open `http://localhost:5173`.
 - Target: samples from alternating cells of a 4 × 4 checkerboard
 - Interpolant: `x_t = (1 - t)x_0 + tx_1`
 - Target velocity: `x_1 - x_0`
-- Pairing: greedy minibatch optimal transport with 2-opt refinement
+- Pairing: deterministic quantile coupling for the checkerboard preset
 - Model: `5 → 64 → 64 → 2` tanh MLP with Fourier time features
+- Time sampling: half uniform, half biased toward the sharp terminal distribution
 - Optimizer: Adam, implemented with typed arrays
 - Sampling: Euler integration with about 84 steps through the learned velocity field
 

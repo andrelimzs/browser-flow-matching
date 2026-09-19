@@ -82,6 +82,7 @@
               <div class="metric"><span>Step</span><strong id="stepMetric">0</strong></div>
               <div class="metric"><span>Loss</span><strong id="lossMetric">—</strong></div>
               <div class="metric"><span>Speed</span><strong><span id="speedMetric">—</span><small> step/s</small></strong></div>
+              <div class="metric metric-wide"><span>Generated samples in occupied cells</span><strong id="hitMetric">—</strong></div>
             </div>
 
             <div class="loss-panel">
@@ -94,7 +95,8 @@
               <div class="summary-row"><span>Parameters</span><strong>4,674</strong></div>
               <div class="summary-row"><span>Optimizer</span><strong>Adam · 2e−3</strong></div>
               <div class="summary-row"><span>Batch size</span><strong>96</strong></div>
-              <div class="summary-row"><span>Pairing</span><strong>Minibatch OT</strong></div>
+              <div class="summary-row"><span>Pairing</span><strong>Quantile map</strong></div>
+              <div class="summary-row"><span>Time sampling</span><strong>50% terminal-biased</strong></div>
             </div>
 
             <div class="training-control">
@@ -116,12 +118,12 @@
             <article>
               <span class="step-number">01</span>
               <h3>Pair</h3>
-              <p>Sample both distributions, then pair nearby points with minibatch optimal transport.</p>
+              <p>Pair Gaussian quantiles with checkerboard rows, columns, and positions.</p>
             </article>
             <article>
               <span class="step-number">02</span>
               <h3>Interpolate</h3>
-              <p>Pick a random time along each low-crossing path between its matched pair.</p>
+              <p>Pick a random time along each stable path between its coupled pair.</p>
             </article>
             <article>
               <span class="step-number">03</span>

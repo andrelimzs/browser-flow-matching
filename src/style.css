@@ -100,6 +100,7 @@ input[type="range"] { width: 100%; accent-color: var(--blue); cursor: pointer; }
 .metrics { display: grid; grid-template-columns: 1fr 1fr; margin-top: 26px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
 .metric { padding: 15px 12px; min-width: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .metric:first-child { grid-column: span 2; }
+.metric-wide { grid-column: span 2; }
 .metric span { display: block; font-family: "DM Mono", monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 7px; }
 .metric strong { display: block; font-family: "DM Mono", monospace; font-size: 19px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .metric strong small { font-size: 10px; color: var(--muted); }
