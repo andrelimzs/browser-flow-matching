@@ -301,11 +301,15 @@ function setParticlesTo(time, keepTails = false, rounding = "nearest") {
     rounding === "floor" ? Math.floor(scaledTime) : Math.round(scaledTime),
   );
   const checkpointChanged = checkpoint !== lastInferenceCheckpoint;
+  const traceCheckpoint = inferenceSteps === 1
+    ? checkpoint
+    : keepTails && model.step > 50
+      ? checkpoint
+      : 0;
   for (const particle of particles) {
-    if (keepTails && checkpointChanged && model.step > 50) {
-      particle.tail.push([particle.x, particle.y]);
-      if (particle.tail.length > 7) particle.tail.shift();
-    } else if (!keepTails) {
+    if (traceCheckpoint > 0 && (checkpointChanged || !keepTails || particle.tail.length === 0)) {
+      particle.tail = particle.path.slice(Math.max(0, traceCheckpoint - 7), traceCheckpoint);
+    } else if (traceCheckpoint === 0) {
       particle.tail = [];
     }
     particle.x = particle.path[checkpoint][0];
@@ -557,8 +561,11 @@ $("#flowToggle").addEventListener("click", () => {
 $("#timeSlider").addEventListener("input", (event) => {
   flowPlaying = false;
   $("#flowToggle").innerHTML = '<span aria-hidden="true">▶</span>';
+  $("#flowToggle").setAttribute("aria-label", "Play particle animation");
   playbackTime = Number(event.target.value);
   setParticlesTo(playbackTime);
+  playbackTime = simTime;
+  holdUntil = 0;
 });
 
 $("#timeSlider").addEventListener("pointerdown", () => {
@@ -570,6 +577,7 @@ document.querySelectorAll("[data-inference-steps]").forEach((button) => {
   button.addEventListener("click", () => {
     const currentTime = simTime;
     inferenceSteps = Number(button.dataset.inferenceSteps);
+    $("#timeSlider").step = String(1 / inferenceSteps);
     document.querySelectorAll("[data-inference-steps]").forEach((option) => {
       option.setAttribute("aria-pressed", String(option === button));
     });
@@ -579,6 +587,8 @@ document.querySelectorAll("[data-inference-steps]").forEach((button) => {
     lastInferenceCheckpoint = -1;
     playbackTime = currentTime;
     setParticlesTo(playbackTime);
+    playbackTime = simTime;
+    holdUntil = 0;
     updateTelemetry();
   });
 });

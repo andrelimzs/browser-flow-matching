@@ -161,6 +161,9 @@ footer { min-height: 78px; display: flex; justify-content: space-between; align-
   .visualizer-card, .training-card { padding: 16px; }
   .canvas-shell { height: 420px; }
   .canvas-label-target { display: none; }
+  .solver-setting { align-items: stretch; flex-direction: column; gap: 8px; }
+  .step-options { width: 100%; }
+  .step-options button { flex: 1; min-width: 0; min-height: 44px; }
   .legend { gap: 12px; }
   .explanation { margin-top: 64px; }
   .explanation-heading { display: block; }
