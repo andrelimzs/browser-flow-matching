@@ -17,8 +17,9 @@ Open `http://localhost:5173`.
 - Target: samples from alternating cells of a 4 × 4 checkerboard
 - Interpolant: `x_t = (1 - t)x_0 + tx_1`
 - Target velocity: `x_1 - x_0`
-- Model: `3 → 64 → 64 → 2` tanh MLP
+- Pairing: greedy minibatch optimal transport with 2-opt refinement
+- Model: `5 → 64 → 64 → 2` tanh MLP with Fourier time features
 - Optimizer: Adam, implemented with typed arrays
-- Sampling: Euler integration through the learned velocity field
+- Sampling: Euler integration with about 84 steps through the learned velocity field
 
 There are no ML runtime dependencies. Training, backpropagation, optimization, and inference are implemented directly in `src/main.js`, which makes the target sampler easy to replace with a drawn point distribution later.

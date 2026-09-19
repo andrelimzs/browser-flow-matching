@@ -1,5 +1,6 @@
 import "./style.css";
 
+const INPUT_WIDTH = 5;
 const WIDTH = 64;
 const BATCH = 96;
 const LR = 0.002;
@@ -42,6 +43,56 @@ function sampleCheckerboard() {
   ];
 }
 
+function squaredDistance(a, b) {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  return dx * dx + dy * dy;
+}
+
+// A cheap minibatch optimal-transport approximation. Every source and target is
+// still used exactly once, but nearby points are paired to remove the worst path
+// crossings (and therefore much of the conditional-velocity noise).
+function pairMinibatch(sources, targets) {
+  const order = Array.from({ length: targets.length }, (_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+
+  const available = Array.from({ length: sources.length }, (_, i) => i);
+  const pairing = new Int16Array(targets.length);
+  for (const targetIndex of order) {
+    let bestSlot = 0;
+    let bestCost = Infinity;
+    for (let slot = 0; slot < available.length; slot++) {
+      const cost = squaredDistance(sources[available[slot]], targets[targetIndex]);
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestSlot = slot;
+      }
+    }
+    pairing[targetIndex] = available[bestSlot];
+    available.splice(bestSlot, 1);
+  }
+
+  // Random 2-opt refinements recover most of the quality of an exact assignment
+  // without putting a cubic-time Hungarian solver in the animation loop.
+  for (let pass = 0; pass < BATCH * 3; pass++) {
+    const a = Math.floor(random() * BATCH);
+    let b = Math.floor(random() * (BATCH - 1));
+    if (b >= a) b++;
+    const sourceA = pairing[a];
+    const sourceB = pairing[b];
+    const current = squaredDistance(sources[sourceA], targets[a]) + squaredDistance(sources[sourceB], targets[b]);
+    const swapped = squaredDistance(sources[sourceB], targets[a]) + squaredDistance(sources[sourceA], targets[b]);
+    if (swapped < current) {
+      pairing[a] = sourceB;
+      pairing[b] = sourceA;
+    }
+  }
+  return pairing;
+}
+
 function xavier(size, fanIn, fanOut) {
   const values = new Float32Array(size);
   const limit = Math.sqrt(6 / (fanIn + fanOut));
@@ -51,7 +102,7 @@ function xavier(size, fanIn, fanOut) {
 
 class TinyMLP {
   constructor() {
-    this.w1 = xavier(WIDTH * 3, 3, WIDTH);
+    this.w1 = xavier(WIDTH * INPUT_WIDTH, INPUT_WIDTH, WIDTH);
     this.b1 = new Float32Array(WIDTH);
     this.w2 = xavier(WIDTH * WIDTH, WIDTH, WIDTH);
     this.b2 = new Float32Array(WIDTH);
@@ -71,9 +122,18 @@ class TinyMLP {
   forward(x, y, time) {
     const h1 = this.h1;
     const h2 = this.h2;
+    const timeSin = Math.sin(Math.PI * 2 * time);
+    const timeCos = Math.cos(Math.PI * 2 * time);
     for (let j = 0; j < WIDTH; j++) {
-      const k = j * 3;
-      h1[j] = Math.tanh(this.w1[k] * x + this.w1[k + 1] * y + this.w1[k + 2] * time + this.b1[j]);
+      const k = j * INPUT_WIDTH;
+      h1[j] = Math.tanh(
+        this.w1[k] * x +
+        this.w1[k + 1] * y +
+        this.w1[k + 2] * time +
+        this.w1[k + 3] * timeSin +
+        this.w1[k + 4] * timeCos +
+        this.b1[j],
+      );
     }
     for (let j = 0; j < WIDTH; j++) {
       let sum = this.b2[j];
@@ -93,10 +153,13 @@ class TinyMLP {
   trainBatch() {
     const grads = this.grads;
     for (const grad of grads) grad.fill(0);
+    const sources = Array.from({ length: BATCH }, sampleSource);
+    const targets = Array.from({ length: BATCH }, sampleCheckerboard);
+    const pairing = pairMinibatch(sources, targets);
     let loss = 0;
     for (let n = 0; n < BATCH; n++) {
-      const x0 = sampleSource();
-      const x1 = sampleCheckerboard();
+      const x0 = sources[pairing[n]];
+      const x1 = targets[n];
       const time = 0.02 + random() * 0.96;
       const x = x0[0] * (1 - time) + x1[0] * time;
       const y = x0[1] * (1 - time) + x1[1] * time;
@@ -128,11 +191,13 @@ class TinyMLP {
 
       for (let j = 0; j < WIDTH; j++) {
         const delta = this.dh1[j] * (1 - this.h1[j] ** 2);
-        const offset = j * 3;
+        const offset = j * INPUT_WIDTH;
         grads[1][j] += delta;
         grads[0][offset] += delta * x;
         grads[0][offset + 1] += delta * y;
         grads[0][offset + 2] += delta * time;
+        grads[0][offset + 3] += delta * Math.sin(Math.PI * 2 * time);
+        grads[0][offset + 4] += delta * Math.cos(Math.PI * 2 * time);
       }
     }
 
@@ -184,7 +249,7 @@ function setParticlesTo(time) {
     particle.tail = [];
   }
   simTime = 0;
-  const steps = Math.max(1, Math.ceil(time * 34));
+  const steps = Math.max(1, Math.ceil(time * 84));
   const dt = time / steps;
   for (let s = 0; s < steps; s++) advanceParticles(dt, false);
   simTime = time;

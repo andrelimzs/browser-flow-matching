@@ -90,10 +90,11 @@
             </div>
 
             <div class="model-summary">
-              <div class="summary-row"><span>Architecture</span><strong>3 → 64 → 64 → 2</strong></div>
-              <div class="summary-row"><span>Parameters</span><strong>4,546</strong></div>
+              <div class="summary-row"><span>Architecture</span><strong>5 → 64 → 64 → 2</strong></div>
+              <div class="summary-row"><span>Parameters</span><strong>4,674</strong></div>
               <div class="summary-row"><span>Optimizer</span><strong>Adam · 2e−3</strong></div>
               <div class="summary-row"><span>Batch size</span><strong>96</strong></div>
+              <div class="summary-row"><span>Pairing</span><strong>Minibatch OT</strong></div>
             </div>
 
             <div class="training-control">
@@ -115,12 +116,12 @@
             <article>
               <span class="step-number">01</span>
               <h3>Pair</h3>
-              <p>Sample a point from Gaussian noise and one from the checkerboard.</p>
+              <p>Sample both distributions, then pair nearby points with minibatch optimal transport.</p>
             </article>
             <article>
               <span class="step-number">02</span>
               <h3>Interpolate</h3>
-              <p>Pick a random time and place the point along the straight path between them.</p>
+              <p>Pick a random time along each low-crossing path between its matched pair.</p>
             </article>
             <article>
               <span class="step-number">03</span>
