@@ -91,11 +91,11 @@
             </div>
 
             <div class="model-summary">
-              <div class="summary-row"><span>Architecture</span><strong>5 → 64 → 64 → 2</strong></div>
-              <div class="summary-row"><span>Parameters</span><strong>4,674</strong></div>
+              <div class="summary-row"><span>Architecture</span><strong>17 → 64 → 64 → 2</strong></div>
+              <div class="summary-row"><span>Parameters</span><strong>5,442</strong></div>
               <div class="summary-row"><span>Optimizer</span><strong>Adam · 2e−3</strong></div>
               <div class="summary-row"><span>Batch size</span><strong>96</strong></div>
-              <div class="summary-row"><span>Pairing</span><strong>Quantile map</strong></div>
+              <div class="summary-row"><span>Pairing</span><strong>Minibatch OT</strong></div>
               <div class="summary-row"><span>Time sampling</span><strong>50% terminal-biased</strong></div>
             </div>
 
@@ -118,12 +118,12 @@
             <article>
               <span class="step-number">01</span>
               <h3>Pair</h3>
-              <p>Pair Gaussian quantiles with checkerboard rows, columns, and positions.</p>
+              <p>Sample both distributions and solve the shortest one-to-one assignment using only their coordinates.</p>
             </article>
             <article>
               <span class="step-number">02</span>
               <h3>Interpolate</h3>
-              <p>Pick a random time along each stable path between its coupled pair.</p>
+              <p>Pick a random time along each coordinate-only path between its paired samples.</p>
             </article>
             <article>
               <span class="step-number">03</span>

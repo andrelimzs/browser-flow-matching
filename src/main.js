@@ -1,6 +1,6 @@
 import "./style.css";
 
-const INPUT_WIDTH = 5;
+const INPUT_WIDTH = 17;
 const WIDTH = 64;
 const BATCH = 96;
 const LR = 0.002;
@@ -43,33 +43,61 @@ function sampleCheckerboard() {
   ];
 }
 
-function normalCDF(value) {
-  const sign = value < 0 ? -1 : 1;
-  const x = Math.abs(value) / Math.sqrt(2);
-  const t = 1 / (1 + 0.3275911 * x);
-  const polynomial = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
-  const erf = sign * (1 - polynomial * Math.exp(-x * x));
-  return Math.min(1 - 1e-7, Math.max(1e-7, 0.5 * (1 + erf)));
-}
-
-// For the built-in checkerboard we can use an exact, stable coupling instead
-// of relearning a different minibatch assignment every step. Gaussian x picks
-// one of the two occupied columns; Gaussian y picks the row. Fractional
-// quantiles remain uniform coordinates inside the selected square.
-function coupleSourceToCheckerboard(source) {
-  const u = normalCDF(source[0] / 0.82);
-  const v = normalCDF(source[1] / 0.82);
-  const side = Math.min(1, Math.floor(u * 2));
-  const row = Math.min(3, Math.floor(v * 4));
-  const col = side * 2 + (row % 2);
-  const localX = u * 2 - side;
-  const localY = v * 4 - row;
-  const cell = 1.18;
-  const span = cell - 0.06;
-  return [
-    (col - 1.5) * cell + (localX - 0.5) * span,
-    (row - 1.5) * cell + (localY - 0.5) * span,
-  ];
+// Solve the empirical 2D optimal-transport assignment once. This depends only
+// on point coordinates and works with any future target sampler.
+function pairPointClouds(sources, targets) {
+  const n = targets.length;
+  const rowPotential = new Float64Array(n + 1);
+  const colPotential = new Float64Array(n + 1);
+  const matchedRow = new Uint16Array(n + 1);
+  const previousCol = new Uint16Array(n + 1);
+  const minValue = new Float64Array(n + 1);
+  const used = new Uint8Array(n + 1);
+  for (let row = 1; row <= n; row++) {
+    matchedRow[0] = row;
+    minValue.fill(Infinity);
+    used.fill(0);
+    let col0 = 0;
+    do {
+      used[col0] = 1;
+      const activeRow = matchedRow[col0];
+      const target = targets[activeRow - 1];
+      let delta = Infinity;
+      let col1 = 0;
+      for (let col = 1; col <= n; col++) {
+        if (used[col]) continue;
+        const source = sources[col - 1];
+        const dx = target[0] - source[0];
+        const dy = target[1] - source[1];
+        const reducedCost = dx * dx + dy * dy - rowPotential[activeRow] - colPotential[col];
+        if (reducedCost < minValue[col]) {
+          minValue[col] = reducedCost;
+          previousCol[col] = col0;
+        }
+        if (minValue[col] < delta) {
+          delta = minValue[col];
+          col1 = col;
+        }
+      }
+      for (let col = 0; col <= n; col++) {
+        if (used[col]) {
+          rowPotential[matchedRow[col]] += delta;
+          colPotential[col] -= delta;
+        } else {
+          minValue[col] -= delta;
+        }
+      }
+      col0 = col1;
+    } while (matchedRow[col0] !== 0);
+    do {
+      const col1 = previousCol[col0];
+      matchedRow[col0] = matchedRow[col1];
+      col0 = col1;
+    } while (col0 !== 0);
+  }
+  const pairing = new Uint16Array(n);
+  for (let col = 1; col <= n; col++) pairing[matchedRow[col] - 1] = col - 1;
+  return pairing;
 }
 
 function xavier(size, fanIn, fanOut) {
@@ -92,6 +120,7 @@ class TinyMLP {
     this.moments = this.params.map((p) => new Float32Array(p.length));
     this.velocities = this.params.map((p) => new Float32Array(p.length));
     this.step = 0;
+    this.input = new Float32Array(INPUT_WIDTH);
     this.h1 = new Float32Array(WIDTH);
     this.h2 = new Float32Array(WIDTH);
     this.dh1 = new Float32Array(WIDTH);
@@ -99,20 +128,31 @@ class TinyMLP {
   }
 
   forward(x, y, time) {
+    const input = this.input;
     const h1 = this.h1;
     const h2 = this.h2;
-    const timeSin = Math.sin(Math.PI * 2 * time);
-    const timeCos = Math.cos(Math.PI * 2 * time);
+    input[0] = x;
+    input[1] = y;
+    input[2] = time;
+    input[3] = Math.sin(Math.PI * 2 * time);
+    input[4] = Math.cos(Math.PI * 2 * time);
+    input[5] = Math.sin(Math.PI * x);
+    input[6] = Math.cos(Math.PI * x);
+    input[7] = Math.sin(Math.PI * y);
+    input[8] = Math.cos(Math.PI * y);
+    input[9] = Math.sin(Math.PI * 2 * x);
+    input[10] = Math.cos(Math.PI * 2 * x);
+    input[11] = Math.sin(Math.PI * 2 * y);
+    input[12] = Math.cos(Math.PI * 2 * y);
+    input[13] = Math.sin(Math.PI * 4 * x);
+    input[14] = Math.cos(Math.PI * 4 * x);
+    input[15] = Math.sin(Math.PI * 4 * y);
+    input[16] = Math.cos(Math.PI * 4 * y);
     for (let j = 0; j < WIDTH; j++) {
       const k = j * INPUT_WIDTH;
-      h1[j] = Math.tanh(
-        this.w1[k] * x +
-        this.w1[k + 1] * y +
-        this.w1[k + 2] * time +
-        this.w1[k + 3] * timeSin +
-        this.w1[k + 4] * timeCos +
-        this.b1[j],
-      );
+      let sum = this.b1[j];
+      for (let i = 0; i < INPUT_WIDTH; i++) sum += this.w1[k + i] * input[i];
+      h1[j] = Math.tanh(sum);
     }
     for (let j = 0; j < WIDTH; j++) {
       let sum = this.b2[j];
@@ -132,12 +172,13 @@ class TinyMLP {
   trainBatch() {
     const grads = this.grads;
     for (const grad of grads) grad.fill(0);
-    const sources = Array.from({ length: BATCH }, sampleSource);
-    const targets = sources.map(coupleSourceToCheckerboard);
+    const batchSources = Array.from({ length: BATCH }, sampleSource);
+    const batchTargets = Array.from({ length: BATCH }, sampleCheckerboard);
+    const batchPairing = pairPointClouds(batchSources, batchTargets);
     let loss = 0;
     for (let n = 0; n < BATCH; n++) {
-      const x0 = sources[n];
-      const x1 = targets[n];
+      const x0 = batchSources[batchPairing[n]];
+      const x1 = batchTargets[n];
       // Keep full-path coverage while spending half the updates near the target,
       // where the checkerboard's sharp empty-cell boundaries are hardest.
       const timeSample = random() < 0.5 ? random() : 1 - random() ** 2;
@@ -174,17 +215,14 @@ class TinyMLP {
         const delta = this.dh1[j] * (1 - this.h1[j] ** 2);
         const offset = j * INPUT_WIDTH;
         grads[1][j] += delta;
-        grads[0][offset] += delta * x;
-        grads[0][offset + 1] += delta * y;
-        grads[0][offset + 2] += delta * time;
-        grads[0][offset + 3] += delta * Math.sin(Math.PI * 2 * time);
-        grads[0][offset + 4] += delta * Math.cos(Math.PI * 2 * time);
+        for (let i = 0; i < INPUT_WIDTH; i++) grads[0][offset + i] += delta * this.input[i];
       }
     }
 
     this.step++;
     const b1Correction = 1 - 0.9 ** this.step;
     const b2Correction = 1 - 0.999 ** this.step;
+    const learningRate = LR;
     for (let p = 0; p < this.params.length; p++) {
       const values = this.params[p];
       const m = this.moments[p];
@@ -193,7 +231,7 @@ class TinyMLP {
       for (let i = 0; i < values.length; i++) {
         m[i] = 0.9 * m[i] + 0.1 * g[i];
         v[i] = 0.999 * v[i] + 0.001 * g[i] * g[i];
-        values[i] -= LR * (m[i] / b1Correction) / (Math.sqrt(v[i] / b2Correction) + 1e-8);
+        values[i] -= learningRate * (m[i] / b1Correction) / (Math.sqrt(v[i] / b2Correction) + 1e-8);
       }
     }
     return loss / BATCH;
