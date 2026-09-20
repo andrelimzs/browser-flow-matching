@@ -121,6 +121,34 @@ export function createView(canvas) {
       context.stroke();
     }
 
+    // Flow candidates. Each polyline is one sampled action chunk, drawn while
+    // it is still being transported from noise, so the spread at the start and
+    // the collapse onto a trajectory are both visible.
+    if (options.flow?.lines?.length) {
+      const { lines, chosen, progress } = options.flow;
+      for (let index = 0; index < lines.length; index++) {
+        const points = lines[index];
+        const isChosen = index === chosen;
+        context.beginPath();
+        for (let k = 0; k < points.length; k += 2) {
+          const px = toX(points[k]);
+          const py = toY(points[k + 1]);
+          if (k === 0) context.moveTo(px, py);
+          else context.lineTo(px, py);
+        }
+        // Faint and thin while diffuse; firmer as the samples resolve.
+        const alpha = isChosen ? 0.25 + progress * 0.6 : 0.08 + progress * 0.22;
+        context.strokeStyle = isChosen ? `rgba(29, 102, 219, ${alpha})` : `rgba(75, 80, 77, ${alpha})`;
+        context.lineWidth = isChosen ? 2 : 1;
+        context.stroke();
+        // Head of each candidate: the first action it would execute.
+        context.beginPath();
+        context.arc(toX(points[0]), toY(points[1]), isChosen ? 3 : 1.8, 0, Math.PI * 2);
+        context.fillStyle = isChosen ? `rgba(29, 102, 219, ${0.4 + progress * 0.5})` : `rgba(75, 80, 77, ${0.2 + progress * 0.3})`;
+        context.fill();
+      }
+    }
+
     // Pusher trail
     if (options.trail?.length > 1) {
       context.beginPath();

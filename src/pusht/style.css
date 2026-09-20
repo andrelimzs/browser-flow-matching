@@ -87,6 +87,8 @@ button { color: inherit; }
 .legend i { display: inline-block; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--coral); }
 .dot-lifted { background: rgba(237, 107, 85, .28); border: 1px dashed rgba(120, 44, 32, .5); }
+.line { width: 14px; height: 2px; background: #191c1b; }
+.line-flow { background: rgba(29, 102, 219, .75); }
 .swatch-block { width: 10px; height: 10px; background: rgba(38,44,41,.88); }
 .swatch-goal { width: 10px; height: 10px; border: 1px dashed rgba(29,102,219,.75); background: rgba(29,102,219,.12); }
 .tile { width: 10px; height: 10px; border: 1px solid rgba(75,80,77,.5); border-radius: 50%; background: rgba(75,80,77,.13); }

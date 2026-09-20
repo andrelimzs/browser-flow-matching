@@ -248,6 +248,69 @@ export class PolicyTrainer {
   }
 }
 
+// A sampler that exposes the integration one Euler step at a time, so the
+// transport from noise to a trajectory can be animated. Several candidates are
+// carried at once: at t=0 they are independent noise, and by t=1 they have
+// collapsed onto the chunks the policy considers plausible here, which is the
+// distribution the whole method exists to represent.
+export function createFlowSampler(policy, observation, { count = 12, steps = 10, random = Math.random, scales } = {}) {
+  const pusherX = observation[0];
+  const pusherY = observation[1];
+  const cos = observation[4];
+  const sin = observation[5];
+  const conditioning = egocentricObservation(observation);
+  const gaussian = () => Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
+
+  const states = new Float32Array(count * CHUNK_WIDTH);
+  for (let index = 0; index < states.length; index++) states[index] = gaussian();
+
+  let step = 0;
+  const delta = 1 / steps;
+  const input = policy.model.inputBuffer();
+
+  function advance() {
+    if (step >= steps) return true;
+    for (let sample = 0; sample < count; sample++) {
+      policy.encode(states, sample * CHUNK_WIDTH, conditioning, 0, step * delta, input, sample * policy.encoder.size);
+    }
+    policy.model.forward(count);
+    const velocity = policy.model.outputs(count);
+    for (let index = 0; index < count * CHUNK_WIDTH; index++) states[index] += velocity[index] * delta;
+    step += 1;
+    return step >= steps;
+  }
+
+  // One candidate as a world-space polyline, valid at any point during the
+  // integration, so partially-transported noise can be drawn too.
+  function polyline(sample, out) {
+    const points = out ?? new Float32Array(CHUNK * 2);
+    for (let k = 0; k < CHUNK; k++) {
+      const base = sample * CHUNK_WIDTH + k * ACTION_DIM;
+      const scale = scales ? scales[k] : DELTA_SCALE;
+      const [dx, dy] = outOfBlockFrame(states[base] * scale, states[base + 1] * scale, cos, sin);
+      points[k * 2] = pusherX + dx;
+      points[k * 2 + 1] = pusherY + dy;
+    }
+    return points;
+  }
+
+  // The finished chunk for one candidate, in the form step() consumes.
+  function chunk(sample) {
+    const out = new Float32Array(CHUNK_WIDTH);
+    for (let k = 0; k < CHUNK; k++) {
+      const base = sample * CHUNK_WIDTH + k * ACTION_DIM;
+      const scale = scales ? scales[k] : DELTA_SCALE;
+      const [dx, dy] = outOfBlockFrame(states[base] * scale, states[base + 1] * scale, cos, sin);
+      out[k * ACTION_DIM] = pusherX + dx;
+      out[k * ACTION_DIM + 1] = pusherY + dy;
+      out[k * ACTION_DIM + 2] = states[base + 2];
+    }
+    return out;
+  }
+
+  return { advance, polyline, chunk, count, get step() { return step; }, steps };
+}
+
 // Integrates the velocity field from noise to an action chunk, in world
 // coordinates. `model` here is a single-sample copy so inference does not
 // disturb a training batch in flight.

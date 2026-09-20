@@ -3,7 +3,7 @@ import { PushWorld, createRandom, SUCCESS_COVERAGE } from "./sim.js";
 import { ScriptedExpert } from "./expert.js";
 import { DemoStore } from "./demos.js";
 import { createView } from "./render.js";
-import { makePolicy, sampleChunk, ACTION_DIM, CHUNK } from "./policy.js";
+import { makePolicy, createFlowSampler, ACTION_DIM, CHUNK } from "./policy.js";
 import { MLP } from "../flow/mlp.js";
 
 const EPISODE_CAP = 2200;
@@ -14,6 +14,10 @@ const EXECUTE = 16;
 // value and holding otherwise turns those into no-ops.
 const LIFT_ON = 0.4;
 const LIFT_OFF = -0.4;
+// Candidate chunks drawn during the flow animation, and how many frames each
+// Euler step is held for.
+const FLOW_SAMPLES = 12;
+const FLOW_HOLD = 4;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -40,6 +44,9 @@ const state = {
   policyReady: false,
   chunk: null,
   chunkCursor: Infinity,
+  sampler: null,
+  flow: null,
+  flowHold: 0,
   lift: 0,
   trainSteps: 4000,
   training: false,
@@ -65,6 +72,8 @@ function resetEpisode({ newWorld = false } = {}) {
   state.finished = null;
   state.chunk = null;
   state.chunkCursor = Infinity;
+  state.sampler = null;
+  state.flow = null;
   state.lift = 0;
   syncUI();
 }
@@ -107,25 +116,57 @@ function nextAction() {
   return expert.act(world);
 }
 
-// Action chunking: sample a chunk, execute part of it open loop, resample.
+// Action chunking, animated: the pusher holds still while a batch of candidate
+// chunks is transported from noise to trajectories, then one is executed for
+// EXECUTE steps, then it repeats.
 function policyAction() {
-  if (!state.policyReady || world.obstacles.length !== state.policyObstacles) {
-    return [world.pusher.x, world.pusher.y, 0];
-  }
-  if (state.chunkCursor >= EXECUTE || !state.chunk) {
-    state.chunk = sampleChunk(state.policy, world.writeObservation(), {
-      steps: 10,
-      random: Math.random,
-      scales: state.policyScales,
-    });
-    state.chunkCursor = 0;
-  }
   const base = state.chunkCursor * ACTION_DIM;
   const raw = state.chunk[base + 2];
   if (raw > LIFT_ON) state.lift = 1;
   else if (raw < LIFT_OFF) state.lift = 0;
   state.chunkCursor += 1;
   return [state.chunk[base], state.chunk[base + 1], state.lift];
+}
+
+// Returns true while the flow is still running, i.e. while the pusher is paused.
+function advanceFlow() {
+  if (!state.policyReady || world.obstacles.length !== state.policyObstacles) return false;
+
+  if (!state.sampler) {
+    state.sampler = createFlowSampler(state.policy, world.writeObservation(), {
+      count: FLOW_SAMPLES,
+      steps: 10,
+      random: Math.random,
+      scales: state.policyScales,
+    });
+    state.flowHold = 0;
+    state.chosen = Math.floor(Math.random() * FLOW_SAMPLES);
+  }
+
+  const sampler = state.sampler;
+  if (sampler.step < sampler.steps) {
+    state.flowHold += 1;
+    if (state.flowHold >= FLOW_HOLD) {
+      state.flowHold = 0;
+      sampler.advance();
+    }
+    captureFlow();
+    return true;
+  }
+
+  // Integration finished: commit the chosen candidate and start executing.
+  state.chunk = sampler.chunk(state.chosen);
+  state.chunkCursor = 0;
+  captureFlow();
+  return false;
+}
+
+function captureFlow() {
+  const sampler = state.sampler;
+  if (!sampler) { state.flow = null; return; }
+  const lines = [];
+  for (let index = 0; index < sampler.count; index++) lines.push(sampler.polyline(index));
+  state.flow = { lines, chosen: state.chosen, progress: sampler.step / sampler.steps };
 }
 
 function advance() {
@@ -234,8 +275,10 @@ function stopTraining() {
 // Builds an inference-sized copy of the network the worker is training, ready
 // to receive weight snapshots.
 function preparePolicy({ observationSize, sizes, scales }) {
-  const policy = makePolicy({ observationSize, width: 128, maxBatch: 1, random: Math.random });
-  policy.model = new MLP({ sizes, maxBatch: 1, random: Math.random });
+  // Sized for the flow animation, which pushes every candidate through one
+  // forward pass per Euler step.
+  const policy = makePolicy({ observationSize, width: 128, maxBatch: FLOW_SAMPLES, random: Math.random });
+  policy.model = new MLP({ sizes, maxBatch: FLOW_SAMPLES, random: Math.random });
   state.policy = policy;
   state.policyScales = Float32Array.from(scales);
   // The observation width is 11 + 3 per obstacle, so a policy is tied to the
@@ -298,7 +341,10 @@ function syncUI() {
   $("#stepsMetric").textContent = String(world.steps);
   $("#stateMetric").textContent =
     state.mode === "teleop" ? "teleop"
-      : state.mode === "policy" ? (state.training ? "flow policy (training)" : "flow policy")
+      : state.mode === "policy"
+        ? (state.sampler && state.sampler.step < state.sampler.steps
+            ? `sampling ${state.sampler.step}/${state.sampler.steps}`
+            : state.training ? "executing (training)" : "executing")
       : expert.describe();
   $("#demoMetric").textContent = `${stats.total}`;
   $("#successMetric").textContent = stats.total ? `${(stats.successRate * 100).toFixed(0)}%` : "—";
@@ -339,8 +385,20 @@ function syncUI() {
 
 function animate() {
   if (state.running) {
-    const steps = state.mode === "teleop" ? 1 : state.speed;
-    for (let index = 0; index < steps; index++) advance();
+    if (state.mode === "policy") {
+      // The pusher is held still for the whole flow animation, so what is on
+      // screen is the sampling, not a blend of sampling and motion.
+      if (!advanceFlow()) {
+        for (let index = 0; index < state.speed; index++) {
+          if (state.chunkCursor >= EXECUTE) { state.sampler = null; state.chunk = null; break; }
+          advance();
+          if (state.finished) break;
+        }
+      }
+    } else {
+      const steps = state.mode === "teleop" ? 1 : state.speed;
+      for (let index = 0; index < steps; index++) advance();
+    }
     syncUI();
   }
   view.draw(world, {
@@ -348,6 +406,7 @@ function animate() {
     trail: state.trail,
     action: state.lastAction,
     showAction: state.mode !== "teleop",
+    flow: state.mode === "policy" ? state.flow : null,
   });
   requestAnimationFrame(animate);
 }

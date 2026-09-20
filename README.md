@@ -155,6 +155,15 @@ tools/multimodality.mjs    branch divergence  OBSTACLES=n
 tools/tune.mjs             weight grid search
 ```
 
+In Policy mode the sampling itself is animated. The pusher holds still while a
+batch of twelve candidate action chunks is transported from Gaussian noise to
+trajectories over ten Euler steps, each drawn as a polyline in the arena: at the
+start they are independent noise, and they collapse onto the chunks the policy
+finds plausible from the current observation. One is then committed and executed
+for sixteen steps, and the cycle repeats. Watching the spread is the point — it
+is the distribution the method exists to represent, which a regression policy
+could not show at all.
+
 Training runs in a Web Worker and streams weight snapshots back about 25 times
 over a run, so Policy mode is live from the first snapshot and the policy can be
 watched improving while it trains. The snapshot is a flat `Float32Array` handed
