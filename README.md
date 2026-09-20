@@ -195,6 +195,11 @@ over as a transferable: 0.019 ms against a ~20 ms training step, where the
 ten single-sample forward passes every 16 simulation steps, so neither side
 slows the other.
 
+Within each chunk, xy commands are learned as first differences: the first is
+relative to the current pusher and each later command is relative to the one
+before it. Sampling cumulatively reconstructs the simulator's absolute targets.
+Lift remains an explicit signed channel.
+
 `ScriptedExpert` takes `routeCostGate: 0` to disable route branching (always take the shorter way round),
 which is how the branching cost above was isolated.
 

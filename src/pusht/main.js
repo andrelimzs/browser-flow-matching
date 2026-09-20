@@ -8,6 +8,9 @@ import { MLP } from "../flow/mlp.js";
 import { savePolicy, loadPolicy, clearPolicy } from "./policy-cache.js";
 
 const EPISODE_CAP = 2200;
+// Keep the obstacle affordance visible while the policy is brought up on the
+// simplest version of the task, but make every world/data path obey one value.
+const OBSTACLE_COUNT = 0;
 // A policy episode that is going nowhere should not grind to the full cap: the
 // expert solves in a median of 186 steps and a p90 of 246, so three times its
 // median is generous, and it ends a failure in seconds rather than a minute.
@@ -34,7 +37,7 @@ const EULER_STEPS = 10;
 const $ = (selector) => document.querySelector(selector);
 
 const random = createRandom(Date.now() >>> 0);
-const world = new PushWorld({ random, obstacleCount: 1 });
+const world = new PushWorld({ random, obstacleCount: OBSTACLE_COUNT });
 const expert = new ScriptedExpert({ random });
 const store = new DemoStore().restore();
 const view = createView($("#arena"));
@@ -73,7 +76,7 @@ function resetEpisode({ newWorld = false } = {}) {
   if (state.recording) store.discard();
   state.recording = false;
   if (newWorld || !state.episodeStart) {
-    world.reset({ obstacleCount: Number($("#obstacleRange").value) });
+    world.reset({ obstacleCount: OBSTACLE_COUNT });
     state.episodeStart = world.snapshot();
   } else {
     world.restore(state.episodeStart);
@@ -91,7 +94,7 @@ function resetEpisode({ newWorld = false } = {}) {
 }
 
 function beginRecording() {
-  world.reset({ obstacleCount: Number($("#obstacleRange").value) });
+  world.reset({ obstacleCount: OBSTACLE_COUNT });
   state.episodeStart = world.snapshot();
   expert.reset();
   state.trail = [];
@@ -227,7 +230,6 @@ function advance() {
 // Training filters failures anyway, so collecting them just wasted the slot.
 function collect(count) {
   const collector = new ScriptedExpert({ random, tieBreak: expert.tieBreak });
-  const obstacleCount = Number($("#obstacleRange").value);
   let kept = 0;
   let resampled = 0;
   let abandoned = 0;
@@ -235,7 +237,7 @@ function collect(count) {
   for (let slot = 0; slot < count; slot++) {
     let stored = false;
     for (let attempt = 0; attempt < COLLECT_ATTEMPTS && !stored; attempt++) {
-      world.reset({ obstacleCount });
+      world.reset({ obstacleCount: OBSTACLE_COUNT });
       collector.reset();
       store.begin(world, "scripted");
       for (let step = 0; step < EPISODE_CAP; step++) {
@@ -258,7 +260,7 @@ function collect(count) {
     if (!stored) abandoned += 1;
   }
 
-  world.reset({ obstacleCount });
+  world.reset({ obstacleCount: OBSTACLE_COUNT });
   state.episodeStart = world.snapshot();
   expert.reset();
   state.trail = [];
@@ -272,9 +274,16 @@ function collect(count) {
 }
 
 function startTraining() {
-  const solved = store.episodes.filter((episode) => episode.success !== false);
+  const observationSize = world.observationSize();
+  // Stored demonstrations can outlive both obstacle-count and action-schema
+  // changes. Only current zero-obstacle, lift-aware episodes are valid here.
+  const solved = store.episodes.filter((episode) =>
+    episode.success !== false &&
+    (episode.observationSize ?? episode.observations?.[0]?.length) === observationSize &&
+    episode.actions?.every((action) => action.length >= ACTION_DIM)
+  );
   if (solved.length < 3) {
-    setStatus("Collect some demonstrations first — the policy trains on solved episodes.");
+    setStatus("Collect at least three solved zero-obstacle demonstrations first.");
     return;
   }
   state.training = true;
@@ -339,10 +348,7 @@ function preparePolicy({ observationSize, sizes, scales }) {
   policy.model = new MLP({ sizes, maxBatch: FLOW_SAMPLES, random: Math.random });
   state.policy = policy;
   state.policyScales = Float32Array.from(scales);
-  // The observation width is 11 + 3 per obstacle, so a policy is tied to the
-  // obstacle count it trained on. Switching the slider afterwards would feed it
-  // the wrong shape, so the count is recorded and restored with the mode.
-  state.policyObstacles = world.obstacles.length;
+  state.policyObstacles = OBSTACLE_COUNT;
   state.policyReady = false;
 }
 
@@ -365,8 +371,11 @@ function adoptWeights(weights) {
 function restoreCachedPolicy() {
   const cached = loadPolicy();
   if (!cached) return;
+  if (cached.obstacleCount !== OBSTACLE_COUNT) {
+    setStatus("The cached policy used obstacles. Collect zero-obstacle demonstrations and train a new policy.");
+    return;
+  }
   preparePolicy(cached);
-  state.policyObstacles = cached.obstacleCount;
   adoptWeights(cached.weights);
   const age = cached.savedAt ? Math.round((Date.now() - cached.savedAt) / 60000) : null;
   setStatus(
@@ -573,16 +582,7 @@ for (const button of document.querySelectorAll("[data-tie]")) {
 }
 
 function setMode(mode) {
-  if (mode === "policy") {
-    if (!state.policyReady) return;
-    // Restore the layout the policy was trained for.
-    const range = $("#obstacleRange");
-    if (Number(range.value) !== state.policyObstacles) {
-      range.value = String(state.policyObstacles);
-      $("#obstacleOutput").textContent = range.value;
-      setStatus(`Policy was trained with ${state.policyObstacles} obstacle${state.policyObstacles === 1 ? "" : "s"}; the arena has been set to match.`);
-    }
-  }
+  if (mode === "policy" && !state.policyReady) return;
   state.mode = mode;
   state.running = false;
   $("#modeExpert").setAttribute("aria-pressed", String(mode === "expert"));
@@ -609,15 +609,6 @@ for (const button of document.querySelectorAll("[data-steps]")) {
     }
   });
 }
-
-$("#obstacleRange").addEventListener("input", (event) => {
-  $("#obstacleOutput").textContent = event.target.value;
-});
-
-$("#obstacleRange").addEventListener("change", () => {
-  state.running = false;
-  resetEpisode({ newWorld: true });
-});
 
 const arena = $("#arena");
 arena.addEventListener("pointermove", (event) => {

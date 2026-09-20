@@ -113,6 +113,8 @@ button { color: inherit; }
 .ghost-button:disabled { opacity: .45; cursor: default; background: transparent; color: var(--muted); }
 
 .solver-setting { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 12px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.solver-setting-disabled { opacity: .45; }
+.solver-setting-disabled input { cursor: not-allowed; }
 .step-options { display: flex; border: 1px solid var(--line); }
 .step-options button { min-width: 44px; min-height: 30px; padding: 4px 10px; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-family: "DM Mono", monospace; font-size: 10px; }
 .step-options button:first-child { border-left: 0; }

@@ -6,7 +6,9 @@
 // the demonstrations.
 
 const STORAGE_KEY = "pusht-policy-v1";
-const VERSION = 1;
+// Version 2 changes xy chunks from positions relative to the initial pusher to
+// first-difference actions. Version 1 weights decode to a different policy.
+const VERSION = 2;
 
 function toBase64(values) {
   const bytes = new Uint8Array(values.buffer, values.byteOffset, values.byteLength);

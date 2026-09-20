@@ -79,16 +79,21 @@ rollout(solved.slice(0, 40), (w, ep, s) => {
 // rung 1: same, but round-tripped through the encoding inference uses.
 rollout(solved.slice(0, 40), (w, ep, s) => {
   const raw = w.writeObservation();
+  const encodedAt = ep.observations[Math.min(ep.observations.length - 1, s)];
   const chunk = new Float32Array(CHUNK_WIDTH);
+  let previousX = encodedAt[0], previousY = encodedAt[1];
+  let targetX = raw[0], targetY = raw[1];
   for (let k = 0; k < CHUNK; k++) {
-    const i = Math.min(ep.observations.length - 1, s + k);
     const a = ep.actions[Math.min(ep.actions.length - 1, s + k)];
-    const o = ep.observations[Math.min(ep.observations.length - 1, s)];
-    const [dx, dy] = intoBlockFrame(a[0] - o[0], a[1] - o[1], o[4], o[5]);
+    const [dx, dy] = intoBlockFrame(a[0] - previousX, a[1] - previousY, encodedAt[4], encodedAt[5]);
     const [bx, by] = outOfBlockFrame(dx, dy, raw[4], raw[5]);
-    chunk[k * ACTION_DIM] = raw[0] + bx;
-    chunk[k * ACTION_DIM + 1] = raw[1] + by;
+    targetX += bx;
+    targetY += by;
+    chunk[k * ACTION_DIM] = targetX;
+    chunk[k * ACTION_DIM + 1] = targetY;
     chunk[k * ACTION_DIM + 2] = a[2];
+    previousX = a[0];
+    previousY = a[1];
   }
   return chunk;
 }, "rung 1: via chunk encode/decode");
@@ -123,11 +128,14 @@ function trainMSE(episodes, steps) {
     model.forward(1);
     const o = model.outputs(1);
     const chunk = new Float32Array(CHUNK_WIDTH);
+    let targetX = raw[0], targetY = raw[1];
     for (let k = 0; k < CHUNK; k++) {
       const scale = ds.scales[k];
       const [dx, dy] = outOfBlockFrame(o[k * ACTION_DIM] * scale, o[k * ACTION_DIM + 1] * scale, raw[4], raw[5]);
-      chunk[k * ACTION_DIM] = raw[0] + dx;
-      chunk[k * ACTION_DIM + 1] = raw[1] + dy;
+      targetX += dx;
+      targetY += dy;
+      chunk[k * ACTION_DIM] = targetX;
+      chunk[k * ACTION_DIM + 1] = targetY;
       chunk[k * ACTION_DIM + 2] = o[k * ACTION_DIM + 2] > 0 ? 1 : 0;
     }
     return chunk;

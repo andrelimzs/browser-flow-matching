@@ -83,11 +83,11 @@
               <button id="resetButton" class="ghost-button" type="button">Reset</button>
             </div>
 
-            <div class="solver-setting">
+            <div class="solver-setting solver-setting-disabled" title="Temporarily fixed at zero while the policy is tuned">
               <span>Obstacles</span>
               <div class="range-setting">
-                <input id="obstacleRange" type="range" min="0" max="4" step="1" value="1" />
-                <output id="obstacleOutput">1</output>
+                <input id="obstacleRange" type="range" min="0" max="4" step="1" value="0" disabled />
+                <output id="obstacleOutput">0</output>
               </div>
             </div>
 

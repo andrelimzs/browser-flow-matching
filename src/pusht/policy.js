@@ -32,21 +32,21 @@ export const CHUNK = 32;
 export const ACTION_DIM = 3;
 export const CHUNK_WIDTH = CHUNK * ACTION_DIM;
 
-// Actions are predicted relative to the pusher's current position, not as
-// absolute arena coordinates. The expert's action sits a mean of 0.053 from the
-// pusher against a coordinate range of 1.0, so predicting the absolute position
-// spends almost all of the model's output variance re-encoding where the pusher
-// already is, and the residual that actually steers is lost in it.
+// Actions are represented as first differences, not absolute arena coordinates:
+// the first command is relative to the current pusher, and every later command
+// is relative to the preceding command. Sampling cumulatively reconstructs the
+// absolute targets consumed by the simulator. This makes temporal smoothness
+// explicit: a steady expert target becomes zeros instead of being re-predicted
+// independently at every position in the chunk.
 //
 // The scale is the standard deviation of that delta, not its extreme: flow
 // matching transports a unit Gaussian onto this distribution, and dividing by
 // the p99 instead left the target at std 0.29 against a source of std 1.0, so
 // the model saw mostly noise. Tails past 1 are fine and expected.
 //
-// One scalar is not enough once the chunk is long: a step 32 ahead moves three
-// times as far from the current pusher as the next one does (rms 0.64 to 2.02
-// across the chunk), so each position is normalized by its own statistic and
-// the scales travel with the dataset. This is the fallback when none are given.
+// Each delta position has its own statistic so the larger first jump and the
+// small subsequent corrections both meet the unit Gaussian at a useful scale.
+// The scales travel with the dataset. This is the fallback when none are given.
 export const DELTA_SCALE = 0.06;
 
 // The observation is expressed in the block's frame, not the arena's.
@@ -108,9 +108,6 @@ export function outOfBlockFrame(dx, dy, cos, sin) {
   return [dx * cos - dy * sin, dx * sin + dy * cos];
 }
 
-const toDelta = (action, origin, scale) => (action - origin) / scale;
-const fromDelta = (value, origin, scale) => origin + value * scale;
-
 // Input is [chunk, observation, time]; only time gets a Fourier lift. The
 // planner needed bands on its spatial inputs because it was fitting a thin
 // curve; this is a much lower-frequency function of position.
@@ -170,19 +167,22 @@ export function buildDataset(episodes, { observationSize, includeFailures = fals
       const raw = episode.observations[index];
       egocentricObservation(raw, scratch);
       observations.set(scratch, cursor * width);
-      // Deltas are taken against the pusher position in this observation, then
-      // rotated into the block frame so the target is equivariant too.
-      const pusherX = raw[0];
-      const pusherY = raw[1];
+      // The first command is relative to the current pusher; later commands are
+      // relative to the preceding command. All deltas use the block frame from
+      // the conditioning observation, so the whole chunk remains equivariant.
+      let previousX = raw[0];
+      let previousY = raw[1];
       const cos = raw[4];
       const sin = raw[5];
       for (let step = 0; step < CHUNK; step++) {
         const source = episode.actions[Math.min(length - 1, index + step)];
-        const [dx, dy] = intoBlockFrame(source[0] - pusherX, source[1] - pusherY, cos, sin);
+        const [dx, dy] = intoBlockFrame(source[0] - previousX, source[1] - previousY, cos, sin);
         chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM] = dx;
         chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 1] = dy;
         // Lift as +-1, in the same range as the rescaled xy channels.
         chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 2] = ((source[2] ?? 0) > 0.5 ? 1 : -1);
+        previousX = source[0];
+        previousY = source[1];
       }
       cursor += 1;
     }
@@ -284,12 +284,16 @@ export function createFlowSampler(policy, observation, { count = 12, steps = 10,
   // integration, so partially-transported noise can be drawn too.
   function polyline(sample, out) {
     const points = out ?? new Float32Array(CHUNK * 2);
+    let targetX = pusherX;
+    let targetY = pusherY;
     for (let k = 0; k < CHUNK; k++) {
       const base = sample * CHUNK_WIDTH + k * ACTION_DIM;
       const scale = scales ? scales[k] : DELTA_SCALE;
       const [dx, dy] = outOfBlockFrame(states[base] * scale, states[base + 1] * scale, cos, sin);
-      points[k * 2] = pusherX + dx;
-      points[k * 2 + 1] = pusherY + dy;
+      targetX += dx;
+      targetY += dy;
+      points[k * 2] = targetX;
+      points[k * 2 + 1] = targetY;
     }
     return points;
   }
@@ -297,12 +301,16 @@ export function createFlowSampler(policy, observation, { count = 12, steps = 10,
   // The finished chunk for one candidate, in the form step() consumes.
   function chunk(sample) {
     const out = new Float32Array(CHUNK_WIDTH);
+    let targetX = pusherX;
+    let targetY = pusherY;
     for (let k = 0; k < CHUNK; k++) {
       const base = sample * CHUNK_WIDTH + k * ACTION_DIM;
       const scale = scales ? scales[k] : DELTA_SCALE;
       const [dx, dy] = outOfBlockFrame(states[base] * scale, states[base + 1] * scale, cos, sin);
-      out[k * ACTION_DIM] = pusherX + dx;
-      out[k * ACTION_DIM + 1] = pusherY + dy;
+      targetX += dx;
+      targetY += dy;
+      out[k * ACTION_DIM] = targetX;
+      out[k * ACTION_DIM + 1] = targetY;
       out[k * ACTION_DIM + 2] = states[base + 2];
     }
     return out;
@@ -331,13 +339,17 @@ export function sampleChunk(policy, observation, { steps = 10, random = Math.ran
     const velocity = policy.model.forward(1);
     for (let index = 0; index < CHUNK_WIDTH; index++) state[index] += velocity[index] * delta;
   }
-  // Back out of the block frame, then off the pusher position.
+  // Back out of the block frame and cumulatively reconstruct absolute targets.
+  let targetX = pusherX;
+  let targetY = pusherY;
   for (let step = 0; step < CHUNK; step++) {
     const scale = scales ? scales[step] : DELTA_SCALE;
     const base = step * ACTION_DIM;
     const [dx, dy] = outOfBlockFrame(state[base] * scale, state[base + 1] * scale, cos, sin);
-    state[base] = pusherX + dx;
-    state[base + 1] = pusherY + dy;
+    targetX += dx;
+    targetY += dy;
+    state[base] = targetX;
+    state[base + 1] = targetY;
     // Left as the raw signed value; execution applies hysteresis to it.
   }
   return state;

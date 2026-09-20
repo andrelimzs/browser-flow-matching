@@ -3,7 +3,7 @@
 // Usage: node tools/policy-train.mjs [episodes] [trainSteps] [evalEpisodes]
 import { PushWorld, createRandom, SUCCESS_COVERAGE } from "../src/pusht/sim.js";
 import { ScriptedExpert } from "../src/pusht/expert.js";
-import { makePolicy, buildDataset, PolicyTrainer, sampleChunk, CHUNK } from "../src/pusht/policy.js";
+import { makePolicy, buildDataset, PolicyTrainer, sampleChunk, CHUNK, ACTION_DIM } from "../src/pusht/policy.js";
 
 const DEMOS = Number(process.argv[2] ?? 60);
 const TRAIN_STEPS = Number(process.argv[3] ?? 3000);
@@ -71,7 +71,8 @@ for (let episode = 0; episode < EVAL; episode++) {
       chunk = sampleChunk(policy, world.writeObservation(), { steps: 10, random, scales: dataset.scales });
       cursor = 0;
     }
-    world.step(chunk[cursor * 2], chunk[cursor * 2 + 1]);
+    const base = cursor * ACTION_DIM;
+    world.step(chunk[base], chunk[base + 1], chunk[base + 2] > 0 ? 1 : 0);
     cursor += 1;
   }
   const coverage = world.coverage();
