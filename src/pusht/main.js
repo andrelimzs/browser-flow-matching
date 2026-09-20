@@ -16,11 +16,11 @@ const EXECUTE = 16;
 const LIFT_ON = 0.4;
 const LIFT_OFF = -0.4;
 // Candidate chunks drawn during the flow animation, and how many frames each
-// Euler step is held for. The integration is ten steps and watching it is the
-// point, so each one is held long enough to register: at 2 frames the whole
-// thing passed in a third of a second and read as a single blink.
+// Euler step is held for. Two frames keeps the sampling and the motion at
+// roughly equal screen time; the tick row makes the ten steps legible without
+// having to stretch them out.
 const FLOW_SAMPLES = 12;
-const FLOW_HOLD = 4;
+const FLOW_HOLD = 2;
 const EULER_STEPS = 10;
 
 const $ = (selector) => document.querySelector(selector);
