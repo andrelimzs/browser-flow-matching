@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#f3f0e8" />
     <meta
       name="description"
-      content="Train a tiny flow-matching neural network in your browser and watch it transport noise into a checkerboard."
+      content="Train a tiny flow-matching controller in your browser and watch it learn a collision-free robot path."
     />
-    <title>Flow Playground — Browser Flow Matching</title>
+    <title>Flow Planner — Browser Robot Navigation</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -16,12 +16,12 @@
   <body>
     <div id="app">
       <header class="site-header">
-        <a class="brand" href="#" aria-label="Flow Playground home">
+        <a class="brand" href="#" aria-label="Flow Planner home">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span>Flow Playground</span>
+          <span>Flow Planner</span>
         </a>
         <div class="header-meta">
-          <span>Experiment 01</span>
+          <span>Experiment 02 · Robotics</span>
           <span class="live-indicator"><i></i> Local compute</span>
         </div>
       </header>
@@ -29,11 +29,11 @@
       <main>
         <section class="intro">
           <div>
-            <p class="eyebrow">A tiny generative model, training live</p>
-            <h1>Turn noise into<br /><em>structure.</em></h1>
+            <p class="eyebrow">A tiny motion policy, training live</p>
+            <h1>Learn the way<br /><em>around.</em></h1>
           </div>
           <p class="intro-copy">
-            This 3-layer neural network learns a velocity field that carries Gaussian noise into a checkerboard—entirely in your browser.
+            A* finds a clearance-aware route through a random obstacle field. A 3-layer neural network then learns to drive robots along it—entirely in your browser.
           </p>
         </section>
 
@@ -41,25 +41,25 @@
           <article class="visualizer-card">
             <div class="card-heading">
               <div>
-                <p class="label">Learned transport</p>
-                <h2>Particle field</h2>
+                <p class="label">Learned navigation</p>
+                <h2>Robot rollouts</h2>
               </div>
               <div class="phase-pill"><span id="phaseDot"></span><span id="phaseLabel">Training</span></div>
             </div>
 
             <div class="canvas-shell">
-              <canvas id="flowCanvas" aria-label="Animated particles moving from Gaussian noise to a checkerboard"></canvas>
-              <div class="canvas-label canvas-label-source">Gaussian source</div>
-              <div class="canvas-label canvas-label-target">Checkerboard target</div>
-              <button id="resampleButton" class="canvas-action" type="button" aria-label="Resample particles" title="Resample particles">
-                <span aria-hidden="true">↻</span> New particles
+              <canvas id="flowCanvas" aria-label="Animated robot rollouts following a planned path around circular obstacles"></canvas>
+              <div class="canvas-label canvas-label-source">A* demonstration</div>
+              <div class="canvas-label canvas-label-target">6.5% clearance</div>
+              <button id="resampleButton" class="canvas-action" type="button" aria-label="Generate a new obstacle world" title="Generate a new obstacle world">
+                <span aria-hidden="true">↻</span> New world
               </button>
             </div>
 
             <div class="timeline">
               <span class="time-label">t = <output id="timeOutput">0.00</output></span>
               <input id="timeSlider" type="range" min="0" max="1" value="0" step="0.05" aria-label="Transport time" />
-              <button id="flowToggle" class="icon-button" type="button" aria-label="Pause particle animation"><span aria-hidden="true">Ⅱ</span></button>
+              <button id="flowToggle" class="icon-button" type="button" aria-label="Pause robot animation"><span aria-hidden="true">Ⅱ</span></button>
             </div>
 
             <div class="solver-setting">
@@ -74,9 +74,9 @@
             </div>
 
             <div class="legend" aria-hidden="true">
-              <span><i class="dot dot-particle"></i>Particles</span>
-              <span><i class="line line-field"></i>Learned velocity</span>
-              <span><i class="tile"></i>Target density</span>
+              <span><i class="dot dot-particle"></i>Learned rollout</span>
+              <span><i class="line line-field"></i>A* reference</span>
+              <span><i class="tile"></i>Clearance zone</span>
             </div>
           </article>
 
@@ -93,7 +93,7 @@
               <div class="metric"><span>Step</span><strong id="stepMetric">0</strong></div>
               <div class="metric"><span>Loss</span><strong id="lossMetric">—</strong></div>
               <div class="metric"><span>Speed</span><strong><span id="speedMetric">—</span><small> step/s</small></strong></div>
-              <div class="metric metric-wide"><span>Generated samples in occupied cells</span><strong id="hitMetric">—</strong></div>
+              <div class="metric metric-wide"><span>Collision-free goal arrivals</span><strong id="hitMetric">—</strong></div>
             </div>
 
             <div class="loss-panel">
@@ -106,15 +106,16 @@
               <div class="summary-row"><span>Parameters</span><strong>5,442</strong></div>
               <div class="summary-row"><span>Optimizer</span><strong>Adam · 2e−3</strong></div>
               <div class="summary-row"><span>Batch size</span><strong>96</strong></div>
-              <div class="summary-row"><span>Pairing</span><strong>Minibatch OT</strong></div>
-              <div class="summary-row"><span>Time sampling</span><strong>50% terminal-biased</strong></div>
+              <div class="summary-row"><span>Expert</span><strong>Inflated-grid A*</strong></div>
+              <div class="summary-row"><span>Obstacles</span><strong id="obstacleSummary">—</strong></div>
+              <div class="summary-row"><span>Route length</span><strong id="routeSummary">—</strong></div>
               <div class="summary-row"><span>Inference</span><strong id="inferenceSummary">20 Euler steps</strong></div>
             </div>
 
             <div class="training-control">
               <div>
                 <span class="control-title">Training loop</span>
-                <span class="control-subtitle" id="trainingStatus">Running on the main thread</span>
+                <span class="control-subtitle" id="trainingStatus">Learning the A* demonstration</span>
               </div>
               <button id="trainingToggle" class="primary-button" type="button"><span aria-hidden="true">Ⅱ</span> Pause</button>
             </div>
@@ -124,29 +125,29 @@
         <section class="explanation" aria-labelledby="explanationTitle">
           <div class="explanation-heading">
             <p class="eyebrow">What you’re watching</p>
-            <h2 id="explanationTitle">One path, learned from pairs.</h2>
+            <h2 id="explanationTitle">Plan once. Learn a continuous controller.</h2>
           </div>
           <div class="steps">
             <article>
               <span class="step-number">01</span>
-              <h3>Pair</h3>
-              <p>Sample both distributions and solve the shortest one-to-one assignment using only their coordinates.</p>
+              <h3>Plan</h3>
+              <p>Inflate each obstacle by the robot’s safety margin, then run A* and shortcut only collision-free segments.</p>
             </article>
             <article>
               <span class="step-number">02</span>
-              <h3>Interpolate</h3>
-              <p>Pick a random time along each coordinate-only path between its paired samples.</p>
+              <h3>Demonstrate</h3>
+              <p>Sample time-indexed positions and velocities along the safe route, with small variations inside the start and goal regions.</p>
             </article>
             <article>
               <span class="step-number">03</span>
-              <h3>Learn</h3>
-              <p>Train the MLP to predict the velocity that continues that journey.</p>
+              <h3>Roll out</h3>
+              <p>Train the MLP to predict that velocity field, then integrate it with Euler steps from unseen starting points.</p>
             </article>
           </div>
           <div class="equation" aria-label="Flow matching training equations">
-            <span>x<sub>t</sub> = (1 − t)x<sub>0</sub> + tx<sub>1</sub></span>
+            <span>x<sub>t</sub> = path(t) + offset(t)</span>
             <i></i>
-            <span>v<sub>θ</sub>(x<sub>t</sub>, t) ≈ x<sub>1</sub> − x<sub>0</sub></span>
+            <span>v<sub>θ</sub>(x<sub>t</sub>, t) ≈ d path(t) / dt</span>
           </div>
         </section>
       </main>

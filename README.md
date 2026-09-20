@@ -1,6 +1,6 @@
-# Flow Playground
+# Flow Planner
 
-An interactive, dependency-light flow-matching demo that trains a tiny MLP entirely in the browser. The model learns a time-dependent 2D velocity field from Gaussian noise to a checkerboard distribution, while the UI visualizes particles, the learned field, and training loss live.
+An interactive, dependency-light robotics flow-matching demo that trains a tiny MLP entirely in the browser. A clearance-aware A* planner generates a safe reference trajectory through random obstacle fields, and the model learns its time-dependent 2D velocity field live.
 
 ## Run locally
 
@@ -13,14 +13,13 @@ Open `http://localhost:5173`.
 
 ## How it works
 
-- Source: 2D Gaussian samples
-- Target: samples from alternating cells of a 4 × 4 checkerboard
-- Interpolant: `x_t = (1 - t)x_0 + tx_1`
-- Target velocity: `x_1 - x_0`
-- Pairing: exact distribution-agnostic minibatch optimal transport
+- World: fixed bottom-left start and top-right goal regions with 3–4 random circular obstacles
+- Expert: 8-connected A* on an obstacle-inflated grid, followed by collision-checked path shortcutting
+- Probability path: the safe reference route plus interpolated start/goal offsets
+- Target velocity: the local route derivative plus the offset derivative
 - Model: `17 → 64 → 64 → 2` tanh MLP with general multiscale spatial and temporal Fourier features
-- Time sampling: half uniform, half biased toward the sharp terminal distribution
+- Time sampling: uniform along the reference trajectory
 - Optimizer: Adam, implemented with typed arrays
 - Sampling: Euler integration with shared, configurable 1, 2, 4, 10, or 20-step paths for animation and scrubbing; playback shows only real solver states
 
-There are no ML runtime dependencies. Training, backpropagation, optimization, and inference are implemented directly in `src/main.js`, which makes the target sampler easy to replace with a drawn point distribution later.
+There are no ML runtime dependencies. Planning, training, backpropagation, optimization, and inference are implemented directly in `src/main.js`.

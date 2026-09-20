@@ -99,7 +99,7 @@ input[type="range"] { width: 100%; accent-color: var(--blue); cursor: pointer; }
 .legend i { display: inline-block; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--coral); }
 .line { width: 14px; height: 1px; background: var(--blue); }
-.tile { width: 10px; height: 10px; border: 1px solid rgba(25,28,27,.35); background: rgba(29,102,219,.08); }
+.tile { width: 10px; height: 10px; border: 1px dashed rgba(237,107,85,.7); border-radius: 50%; background: rgba(237,107,85,.08); }
 
 .text-button { border: 0; background: transparent; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; padding: 4px 0; }
 .text-button:hover { color: var(--ink); }
