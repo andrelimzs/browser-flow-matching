@@ -130,7 +130,8 @@ comparison set.
 
 ## Demonstrations
 
-Both sources write the same format. **Collect** runs the scripted expert headlessly; **Teleop** mode lets
+Both sources write the same format. **Collect** runs the scripted expert headlessly and resamples any
+episode it fails, so every collected episode is a solved one; **Teleop** mode lets
 you steer the pusher with the cursor and records what you do, so the multimodality comes from your own
 inconsistency rather than a coin flip. Episodes persist to `localStorage` at 4-decimal precision
 (~110 bytes per transition, so roughly 45 episodes fit the quota) and export as JSON. `toDataset()`

@@ -12,6 +12,10 @@ const EPISODE_CAP = 2200;
 // expert solves in a median of 186 steps and a p90 of 246, so three times its
 // median is generous, and it ends a failure in seconds rather than a minute.
 const POLICY_EPISODE_CAP = 600;
+// Attempts allowed per collection slot before giving up on it. The expert
+// solves 92-100% depending on obstacle count, so six consecutive failures is
+// vanishingly unlikely and the bound only exists to stop a pathological loop.
+const COLLECT_ATTEMPTS = 6;
 const TRAIL_LENGTH = 220;
 const EXECUTE = 16;
 // The raw lift sign is wrong often enough that an isolated flip would send the
@@ -216,23 +220,44 @@ function advance() {
 // Batch collection runs the expert without rendering: at roughly 70k steps per
 // second a ten-episode set costs a few tens of milliseconds, so it can be done
 // synchronously without blocking the frame budget in any visible way.
+// Collects `count` solved episodes, resampling any the expert fails rather than
+// storing them. A failed episode runs to the step cap doing nothing useful, so
+// it is both the longest episode and the least worth learning from; keeping
+// them once meant a quarter of the training transitions were the expert stuck.
+// Training filters failures anyway, so collecting them just wasted the slot.
 function collect(count) {
   const collector = new ScriptedExpert({ random, tieBreak: expert.tieBreak });
   const obstacleCount = Number($("#obstacleRange").value);
   let kept = 0;
-  for (let episode = 0; episode < count; episode++) {
-    world.reset({ obstacleCount });
-    collector.reset();
-    store.begin(world, "scripted");
-    for (let step = 0; step < EPISODE_CAP; step++) {
-      if (world.coverage() >= SUCCESS_COVERAGE) break;
-      const observation = world.writeObservation();
-      const [actionX, actionY, lift] = collector.act(world);
-      store.record(observation, actionX, actionY, lift);
-      world.step(actionX, actionY, lift);
+  let resampled = 0;
+  let abandoned = 0;
+
+  for (let slot = 0; slot < count; slot++) {
+    let stored = false;
+    for (let attempt = 0; attempt < COLLECT_ATTEMPTS && !stored; attempt++) {
+      world.reset({ obstacleCount });
+      collector.reset();
+      store.begin(world, "scripted");
+      for (let step = 0; step < EPISODE_CAP; step++) {
+        if (world.coverage() >= SUCCESS_COVERAGE) break;
+        const observation = world.writeObservation();
+        const [actionX, actionY, lift] = collector.act(world);
+        store.record(observation, actionX, actionY, lift);
+        world.step(actionX, actionY, lift);
+      }
+      // store.end still returns null for an episode below the minimum length,
+      // which also counts as not filling the slot.
+      if (world.succeeded() && store.end(world, { keep: true })) {
+        kept += 1;
+        stored = true;
+      } else {
+        store.discard();
+        resampled += 1;
+      }
     }
-    if (store.end(world, { keep: true })) kept += 1;
+    if (!stored) abandoned += 1;
   }
+
   world.reset({ obstacleCount });
   state.episodeStart = world.snapshot();
   expert.reset();
@@ -240,7 +265,9 @@ function collect(count) {
   state.lastAction = null;
   state.finished = null;
   state.running = false;
-  reportStorage(`Collected ${kept} scripted episodes.`);
+  const note = resampled ? ` (${resampled} resampled)` : "";
+  const missed = abandoned ? ` ${abandoned} could not be solved in ${COLLECT_ATTEMPTS} attempts.` : "";
+  reportStorage(`Collected ${kept} solved episodes${note}.${missed}`);
   syncUI();
 }
 
