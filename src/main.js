@@ -1,6 +1,6 @@
 import "./style.css";
 
-const INPUT_WIDTH = 17;
+const INPUT_WIDTH = 20;
 const WIDTH = 64;
 const BATCH = 96;
 const LR = 0.002;
@@ -53,61 +53,6 @@ function pointSegmentDistance(point, start, end) {
   if (denominator === 0) return distance(point, start);
   const amount = clamp(((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / denominator, 0, 1);
   return Math.hypot(point[0] - (start[0] + dx * amount), point[1] - (start[1] + dy * amount));
-}
-
-function pairPointClouds(sources, targets) {
-  const count = targets.length;
-  const rowPotential = new Float64Array(count + 1);
-  const columnPotential = new Float64Array(count + 1);
-  const matchedRow = new Uint16Array(count + 1);
-  const previousColumn = new Uint16Array(count + 1);
-  const minimumValue = new Float64Array(count + 1);
-  const used = new Uint8Array(count + 1);
-  for (let row = 1; row <= count; row++) {
-    matchedRow[0] = row;
-    minimumValue.fill(Infinity);
-    used.fill(0);
-    let column = 0;
-    do {
-      used[column] = 1;
-      const activeRow = matchedRow[column];
-      const target = targets[activeRow - 1];
-      let delta = Infinity;
-      let nextColumn = 0;
-      for (let candidate = 1; candidate <= count; candidate++) {
-        if (used[candidate]) continue;
-        const source = sources[candidate - 1];
-        const dx = target[0] - source[0];
-        const dy = target[1] - source[1];
-        const reducedCost = dx * dx + dy * dy - rowPotential[activeRow] - columnPotential[candidate];
-        if (reducedCost < minimumValue[candidate]) {
-          minimumValue[candidate] = reducedCost;
-          previousColumn[candidate] = column;
-        }
-        if (minimumValue[candidate] < delta) {
-          delta = minimumValue[candidate];
-          nextColumn = candidate;
-        }
-      }
-      for (let candidate = 0; candidate <= count; candidate++) {
-        if (used[candidate]) {
-          rowPotential[matchedRow[candidate]] += delta;
-          columnPotential[candidate] -= delta;
-        } else {
-          minimumValue[candidate] -= delta;
-        }
-      }
-      column = nextColumn;
-    } while (matchedRow[column] !== 0);
-    do {
-      const previous = previousColumn[column];
-      matchedRow[column] = matchedRow[previous];
-      column = previous;
-    } while (column !== 0);
-  }
-  const pairing = new Uint16Array(count);
-  for (let column = 1; column <= count; column++) pairing[matchedRow[column] - 1] = column - 1;
-  return pairing;
 }
 
 class MinHeap {
@@ -370,11 +315,10 @@ function sampleUniformFree() {
   return [...START];
 }
 
-function samplePathPoint() {
-  const time = random();
-  const point = referenceState(time);
-  const before = referenceState(Math.max(0, time - 0.01));
-  const after = referenceState(Math.min(1, time + 0.01));
+function samplePathPoint(progress) {
+  const point = referenceState(progress);
+  const before = referenceState(Math.max(0, progress - 0.01));
+  const after = referenceState(Math.min(1, progress + 0.01));
   const tangentX = after[0] - before[0];
   const tangentY = after[1] - before[1];
   const tangentLength = Math.max(1e-6, Math.hypot(tangentX, tangentY));
@@ -409,27 +353,30 @@ class TinyMLP {
     this.dh2 = new Float32Array(WIDTH);
   }
 
-  forward(x, y, time) {
+  forward(x, y, flowTime, pathProgress) {
     const input = this.input;
     const normalizedX = x * 2 - 1;
     const normalizedY = y * 2 - 1;
     input[0] = normalizedX;
     input[1] = normalizedY;
-    input[2] = time;
-    input[3] = Math.sin(Math.PI * 2 * time);
-    input[4] = Math.cos(Math.PI * 2 * time);
-    input[5] = Math.sin(Math.PI * normalizedX);
-    input[6] = Math.cos(Math.PI * normalizedX);
-    input[7] = Math.sin(Math.PI * normalizedY);
-    input[8] = Math.cos(Math.PI * normalizedY);
-    input[9] = Math.sin(Math.PI * 2 * normalizedX);
-    input[10] = Math.cos(Math.PI * 2 * normalizedX);
-    input[11] = Math.sin(Math.PI * 2 * normalizedY);
-    input[12] = Math.cos(Math.PI * 2 * normalizedY);
-    input[13] = Math.sin(Math.PI * 4 * normalizedX);
-    input[14] = Math.cos(Math.PI * 4 * normalizedX);
-    input[15] = Math.sin(Math.PI * 4 * normalizedY);
-    input[16] = Math.cos(Math.PI * 4 * normalizedY);
+    input[2] = flowTime;
+    input[3] = pathProgress;
+    input[4] = Math.sin(Math.PI * 2 * flowTime);
+    input[5] = Math.cos(Math.PI * 2 * flowTime);
+    input[6] = Math.sin(Math.PI * 2 * pathProgress);
+    input[7] = Math.cos(Math.PI * 2 * pathProgress);
+    input[8] = Math.sin(Math.PI * normalizedX);
+    input[9] = Math.cos(Math.PI * normalizedX);
+    input[10] = Math.sin(Math.PI * normalizedY);
+    input[11] = Math.cos(Math.PI * normalizedY);
+    input[12] = Math.sin(Math.PI * 2 * normalizedX);
+    input[13] = Math.cos(Math.PI * 2 * normalizedX);
+    input[14] = Math.sin(Math.PI * 2 * normalizedY);
+    input[15] = Math.cos(Math.PI * 2 * normalizedY);
+    input[16] = Math.sin(Math.PI * 4 * normalizedX);
+    input[17] = Math.cos(Math.PI * 4 * normalizedX);
+    input[18] = Math.sin(Math.PI * 4 * normalizedY);
+    input[19] = Math.cos(Math.PI * 4 * normalizedY);
     for (let j = 0; j < WIDTH; j++) {
       const offset = j * INPUT_WIDTH;
       let sum = this.b1[j];
@@ -454,19 +401,23 @@ class TinyMLP {
   trainBatch() {
     for (const gradient of this.grads) gradient.fill(0);
     const sources = Array.from({ length: BATCH }, sampleUniformFree);
-    const targets = Array.from({ length: BATCH }, samplePathPoint);
-    const pairing = pairPointClouds(sources, targets);
+    const progresses = new Float32Array(BATCH);
+    const targets = Array.from({ length: BATCH }, (_, index) => {
+      progresses[index] = random();
+      return samplePathPoint(progresses[index]);
+    });
     let loss = 0;
     for (let sample = 0; sample < BATCH; sample++) {
-      const source = sources[pairing[sample]];
+      const source = sources[sample];
       const target = targets[sample];
+      const progress = progresses[sample];
       const timeSample = random() < 0.5 ? random() : 1 - random() ** 2;
       const time = 0.01 + timeSample * 0.98;
       const x = source[0] * (1 - time) + target[0] * time;
       const y = source[1] * (1 - time) + target[1] * time;
       const targetX = target[0] - source[0];
       const targetY = target[1] - source[1];
-      const output = this.forward(x, y, time);
+      const output = this.forward(x, y, time, progress);
       const errorX = output[0] - targetX;
       const errorY = output[1] - targetY;
       const deltaX = errorX / BATCH;
@@ -543,7 +494,7 @@ let latestCoverageRate = null;
 function resetParticles() {
   particles = Array.from({ length: PARTICLE_COUNT }, () => {
     const [x, y] = sampleUniformFree();
-    return { x, y, x0: x, y0: y, tail: [], path: [] };
+    return { x, y, x0: x, y0: y, progress: random(), tail: [], path: [] };
   });
   buildParticlePaths();
   simTime = 0;
@@ -560,7 +511,7 @@ function buildParticlePaths() {
     let y = particle.y0;
     particle.path = [[x, y]];
     for (let step = 0; step < inferenceSteps; step++) {
-      const [velocityX, velocityY] = model.forward(x, y, step * dt);
+      const [velocityX, velocityY] = model.forward(x, y, step * dt, particle.progress);
       x += velocityX * dt;
       y += velocityY * dt;
       particle.path.push([x, y]);
@@ -608,28 +559,6 @@ function resizeCanvas(canvas, context) {
   return rect;
 }
 
-function drawArrow(context, x, y, dx, dy, alpha) {
-  const length = Math.hypot(dx, dy);
-  if (length < 0.001) return;
-  const scale = Math.min(13, length * 11) / length;
-  const endX = x + dx * scale;
-  const endY = y + dy * scale;
-  context.beginPath();
-  context.moveTo(x, y);
-  context.lineTo(endX, endY);
-  context.strokeStyle = `rgba(29, 102, 219, ${alpha})`;
-  context.lineWidth = 1;
-  context.stroke();
-  const angle = Math.atan2(endY - y, endX - x);
-  context.beginPath();
-  context.moveTo(endX, endY);
-  context.lineTo(endX - 3.2 * Math.cos(angle - 0.55), endY - 3.2 * Math.sin(angle - 0.55));
-  context.lineTo(endX - 3.2 * Math.cos(angle + 0.55), endY - 3.2 * Math.sin(angle + 0.55));
-  context.closePath();
-  context.fillStyle = `rgba(29, 102, 219, ${alpha})`;
-  context.fill();
-}
-
 function drawFlow() {
   const rect = resizeCanvas(flowCanvas, flowCtx);
   const width = rect.width;
@@ -667,10 +596,10 @@ function drawFlow() {
   for (const obstacle of obstacles) {
     flowCtx.beginPath();
     flowCtx.arc(toX(obstacle.x), toY(obstacle.y), (obstacle.r + ROBOT_RADIUS + CLEARANCE) * fieldSize, 0, Math.PI * 2);
-    flowCtx.fillStyle = "rgba(237, 107, 85, .055)";
+    flowCtx.fillStyle = "rgba(75, 80, 77, .06)";
     flowCtx.fill();
     flowCtx.setLineDash([4, 5]);
-    flowCtx.strokeStyle = "rgba(237, 107, 85, .35)";
+    flowCtx.strokeStyle = "rgba(75, 80, 77, .42)";
     flowCtx.stroke();
     flowCtx.setLineDash([]);
     flowCtx.beginPath();
@@ -702,23 +631,26 @@ function drawFlow() {
     if (index === 0) flowCtx.moveTo(toX(point[0]), toY(point[1]));
     else flowCtx.lineTo(toX(point[0]), toY(point[1]));
   });
-  flowCtx.setLineDash([5, 6]);
-  flowCtx.strokeStyle = "rgba(29, 102, 219, .72)";
-  flowCtx.lineWidth = 2;
+  flowCtx.setLineDash([6, 5]);
+  flowCtx.strokeStyle = "rgba(20, 23, 22, .88)";
+  flowCtx.lineWidth = 2.2;
   flowCtx.stroke();
   flowCtx.setLineDash([]);
 
-  if (model.step > 20) {
-    const divisions = width < 520 ? 6 : 8;
-    for (let row = 1; row < divisions; row++) {
-      for (let column = 1; column < divisions; column++) {
-        const x = column / divisions;
-        const y = row / divisions;
-        if (blockedAt(x, y, obstacles, 0)) continue;
-        const [velocityX, velocityY] = model.forward(x, y, simTime);
-        drawArrow(flowCtx, toX(x), toY(y), velocityX, -velocityY, 0.2);
-      }
-    }
+  flowCtx.fillStyle = "rgba(20, 23, 22, .9)";
+  for (const fraction of [0.28, 0.52, 0.76]) {
+    const index = Math.min(referencePath.length - 2, Math.floor(fraction * (referencePath.length - 1)));
+    const point = referencePath[index];
+    const next = referencePath[index + 1];
+    const angle = Math.atan2(toY(next[1]) - toY(point[1]), toX(next[0]) - toX(point[0]));
+    const x = toX(point[0]);
+    const y = toY(point[1]);
+    flowCtx.beginPath();
+    flowCtx.moveTo(x + Math.cos(angle) * 5, y + Math.sin(angle) * 5);
+    flowCtx.lineTo(x + Math.cos(angle + 2.5) * 5, y + Math.sin(angle + 2.5) * 5);
+    flowCtx.lineTo(x + Math.cos(angle - 2.5) * 5, y + Math.sin(angle - 2.5) * 5);
+    flowCtx.closePath();
+    flowCtx.fill();
   }
 
   for (const particle of particles) {
@@ -821,18 +753,10 @@ function evaluateRollouts() {
   const binCount = 20;
   for (const particle of particles) {
     const endpoint = particle.path[particle.path.length - 1];
-    let nearestIndex = 0;
-    let nearestDistance = Infinity;
-    for (let i = 0; i < referencePath.length; i++) {
-      const candidateDistance = distance(endpoint, referencePath[i]);
-      if (candidateDistance < nearestDistance) {
-        nearestDistance = candidateDistance;
-        nearestIndex = i;
-      }
-    }
-    if (nearestDistance <= 0.035) {
+    const expected = referenceState(particle.progress);
+    if (distance(endpoint, expected) <= 0.035) {
       onPath++;
-      occupiedBins.add(Math.min(binCount - 1, Math.floor((nearestIndex / referencePath.length) * binCount)));
+      occupiedBins.add(Math.min(binCount - 1, Math.floor(particle.progress * binCount)));
     }
   }
   latestPathRate = onPath / particles.length;

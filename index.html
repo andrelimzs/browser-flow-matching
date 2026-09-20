@@ -57,8 +57,8 @@
             </div>
 
             <div class="timeline">
-              <span class="time-label">t = <output id="timeOutput">0.00</output></span>
-              <input id="timeSlider" type="range" min="0" max="1" value="0" step="0.05" aria-label="Transport time" />
+              <span class="time-label">τ = <output id="timeOutput">0.00</output></span>
+              <input id="timeSlider" type="range" min="0" max="1" value="0" step="0.05" aria-label="Flow transport time" />
               <button id="flowToggle" class="icon-button" type="button" aria-label="Pause flow animation"><span aria-hidden="true">Ⅱ</span></button>
             </div>
 
@@ -75,8 +75,8 @@
 
             <div class="legend" aria-hidden="true">
               <span><i class="dot dot-particle"></i>Flow samples</span>
-              <span><i class="line line-field"></i>A* reference</span>
-              <span><i class="tile"></i>Clearance zone</span>
+              <span><i class="line line-field"></i>GT path · start → goal</span>
+              <span><i class="tile"></i>Safety envelope</span>
             </div>
           </article>
 
@@ -93,7 +93,7 @@
               <div class="metric"><span>Step</span><strong id="stepMetric">0</strong></div>
               <div class="metric"><span>Loss</span><strong id="lossMetric">—</strong></div>
               <div class="metric"><span>Speed</span><strong><span id="speedMetric">—</span><small> step/s</small></strong></div>
-              <div class="metric metric-wide"><span>Samples on path / trajectory coverage</span><strong id="hitMetric">—</strong></div>
+              <div class="metric metric-wide"><span>Progress accuracy / trajectory coverage</span><strong id="hitMetric">—</strong></div>
             </div>
 
             <div class="loss-panel">
@@ -102,14 +102,15 @@
             </div>
 
             <div class="model-summary">
-              <div class="summary-row"><span>Architecture</span><strong>17 → 64 → 64 → 2</strong></div>
-              <div class="summary-row"><span>Parameters</span><strong>5,442</strong></div>
+              <div class="summary-row"><span>Architecture</span><strong>20 → 64 → 64 → 2</strong></div>
+              <div class="summary-row"><span>Parameters</span><strong>5,634</strong></div>
               <div class="summary-row"><span>Optimizer</span><strong>Adam · 2e−3</strong></div>
               <div class="summary-row"><span>Batch size</span><strong>96</strong></div>
               <div class="summary-row"><span>Planner</span><strong>Inflated-grid A*</strong></div>
               <div class="summary-row"><span>Source</span><strong>Uniform free space</strong></div>
-              <div class="summary-row"><span>Target</span><strong>Complete A* path</strong></div>
-              <div class="summary-row"><span>Pairing</span><strong>Minibatch OT</strong></div>
+              <div class="summary-row"><span>Target</span><strong>p(s) on complete path</strong></div>
+              <div class="summary-row"><span>Conditioning</span><strong>Flow τ · progress s</strong></div>
+              <div class="summary-row"><span>Coupling</span><strong>Conditional on s</strong></div>
               <div class="summary-row"><span>Obstacles</span><strong id="obstacleSummary">—</strong></div>
               <div class="summary-row"><span>Route length</span><strong id="routeSummary">—</strong></div>
               <div class="summary-row"><span>Inference</span><strong id="inferenceSummary">20 Euler steps</strong></div>
@@ -139,18 +140,18 @@
             <article>
               <span class="step-number">02</span>
               <h3>Pair</h3>
-              <p>Sample uniform free-space points and points all along the planned trajectory, then find a short minibatch optimal-transport pairing.</p>
+              <p>Sample progress s uniformly along the route, retain it as conditioning, and pair p(s) with an independent free-space source.</p>
             </article>
             <article>
               <span class="step-number">03</span>
               <h3>Match</h3>
-              <p>Train the MLP on interpolated pairs, then integrate its velocity field so the whole uniform cloud settles onto the full route.</p>
+              <p>Integrate over flow time τ while holding each particle’s s fixed, so it lands at the correct ordered position along the route.</p>
             </article>
           </div>
           <div class="equation" aria-label="Flow matching training equations">
-            <span>x<sub>t</sub> = (1 − t)x<sub>uniform</sub> + tx<sub>path</sub></span>
+            <span>x<sub>τ</sub> = (1 − τ)x<sub>0</sub> + τp(s)</span>
             <i></i>
-            <span>v<sub>θ</sub>(x<sub>t</sub>, t) ≈ x<sub>path</sub> − x<sub>uniform</sub></span>
+            <span>v<sub>θ</sub>(x<sub>τ</sub>, τ, s) ≈ p(s) − x<sub>0</sub></span>
           </div>
         </section>
       </main>
