@@ -22,7 +22,7 @@ for (let trial = 0; trial < 40; trial++) {
   const first = { ...world.block, pusherX: world.pusher.x, pusherY: world.pusher.y };
 
   world.restore(start);
-  for (const [x, y] of actions) world.step(x, y, lift);
+  for (const [x, y, replayLift] of actions) world.step(x, y, replayLift);
   const second = { ...world.block, pusherX: world.pusher.x, pusherY: world.pusher.y };
 
   worstPosition = Math.max(
