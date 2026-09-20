@@ -58,7 +58,7 @@
 
             <div class="timeline">
               <span class="time-label">τ = <output id="timeOutput">0.00</output></span>
-              <input id="timeSlider" type="range" min="0" max="1" value="0" step="0.05" aria-label="Flow transport time" />
+              <input id="timeSlider" type="range" min="0" max="1" value="0" step="0.1" aria-label="Flow transport time" />
               <button id="flowToggle" class="icon-button" type="button" aria-label="Pause flow animation"><span aria-hidden="true">Ⅱ</span></button>
             </div>
 
@@ -68,21 +68,21 @@
                 <button type="button" data-inference-steps="1" aria-pressed="false">1</button>
                 <button type="button" data-inference-steps="2" aria-pressed="false">2</button>
                 <button type="button" data-inference-steps="4" aria-pressed="false">4</button>
-                <button type="button" data-inference-steps="10" aria-pressed="false">10</button>
-                <button type="button" data-inference-steps="20" aria-pressed="true">20</button>
+                <button type="button" data-inference-steps="10" aria-pressed="true">10</button>
+                <button type="button" data-inference-steps="20" aria-pressed="false">20</button>
               </div>
             </div>
 
             <div class="solver-setting">
               <span>Path progress s</span>
-              <button id="progressToggle" class="mode-toggle" type="button" aria-pressed="false">Off</button>
+              <button id="progressToggle" class="mode-toggle" type="button" aria-pressed="true">On</button>
             </div>
 
             <div class="solver-setting">
               <label for="obstacleSlider">Obstacles</label>
               <div class="range-setting">
-                <input id="obstacleSlider" type="range" min="2" max="10" value="3" step="1" aria-label="Number of obstacles" />
-                <output id="obstacleOutput" for="obstacleSlider">3</output>
+                <input id="obstacleSlider" type="range" min="2" max="6" value="4" step="1" aria-label="Number of obstacles" />
+                <output id="obstacleOutput" for="obstacleSlider">4</output>
               </div>
             </div>
 
@@ -106,7 +106,7 @@
               <div class="metric"><span>Step</span><strong id="stepMetric">0</strong></div>
               <div class="metric"><span>Loss</span><strong id="lossMetric">—</strong></div>
               <div class="metric"><span>Speed</span><strong><span id="speedMetric">—</span><small> step/s</small></strong></div>
-              <div class="metric metric-wide"><span id="hitMetricLabel">Samples on path / trajectory coverage</span><strong id="hitMetric">—</strong></div>
+              <div class="metric metric-wide"><span id="hitMetricLabel">Progress accuracy / trajectory coverage</span><strong id="hitMetric">—</strong></div>
             </div>
 
             <div class="loss-panel">
@@ -122,17 +122,17 @@
               <div class="summary-row"><span>Planner</span><strong>Barrier-cost A*</strong></div>
               <div class="summary-row"><span>Source</span><strong>Uniform free space</strong></div>
               <div class="summary-row"><span>Target</span><strong>Complete A* path</strong></div>
-              <div class="summary-row"><span>Conditioning</span><strong id="conditioningSummary">Flow τ only</strong></div>
-              <div class="summary-row"><span>Coupling</span><strong id="couplingSummary">Independent</strong></div>
+              <div class="summary-row"><span>Conditioning</span><strong id="conditioningSummary">Flow τ · progress s</strong></div>
+              <div class="summary-row"><span>Coupling</span><strong id="couplingSummary">Ranked by proximity</strong></div>
               <div class="summary-row"><span>Obstacles</span><strong id="obstacleSummary">—</strong></div>
               <div class="summary-row"><span>Route length</span><strong id="routeSummary">—</strong></div>
-              <div class="summary-row"><span>Inference</span><strong id="inferenceSummary">20 Euler steps</strong></div>
+              <div class="summary-row"><span>Inference</span><strong id="inferenceSummary">10 Euler steps</strong></div>
             </div>
 
             <div class="training-control">
               <div>
                 <span class="control-title">Training loop</span>
-                <span class="control-subtitle" id="trainingStatus">Matching uniform samples to the path</span>
+                <span class="control-subtitle" id="trainingStatus">Learning ordered positions along the path</span>
               </div>
               <button id="trainingToggle" class="primary-button" type="button"><span aria-hidden="true">Ⅱ</span> Pause</button>
             </div>

@@ -577,15 +577,15 @@ class TinyMLP {
   }
 }
 
-let obstacleCount = 3;
+let obstacleCount = 4;
 let world = generateWorld(obstacleCount);
 let obstacles = world.obstacles;
 let referencePath = world.path;
-let usePathProgress = false;
+let usePathProgress = true;
 let model = new TinyMLP();
 let training = true;
 let flowPlaying = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-let inferenceSteps = 20;
+let inferenceSteps = 10;
 let simTime = 0;
 let playbackTime = 0;
 let lastInferenceCheckpoint = 0;
