@@ -142,6 +142,22 @@ reports the rest as `excluded` rather than running them together, which would ot
 with zeros and shift every field past the pusher position into the wrong column. Data restored from
 storage is validated on the way in, so one malformed episode cannot take the page down on first render.
 
+## Demo viewer (`/pusht/viewer/`)
+
+Replays any recorded demonstration with the cached policy rolled out from the
+identical starting pose, so the step where the two part company is visible.
+Expert pusher path solid, policy dashed, the expert's block pose behind the
+policy's as a ghost, with a scrubber over the longer of the two.
+
+It reads the demonstrations and the policy out of the same browser storage the
+main page writes, so it is a view onto that data rather than a second copy of
+the training machinery. Recorded poses come straight from the stored
+observations, which reconstruct the simulator's state to 7e-5 -- the four-decimal
+rounding applied on record. **Re-run policy** draws a fresh sample from the same
+distribution, which is worth doing a few times: the spread between draws is the
+multimodality, and a policy that lands somewhere different each time is behaving
+as intended rather than malfunctioning.
+
 ## Tools
 
 ```

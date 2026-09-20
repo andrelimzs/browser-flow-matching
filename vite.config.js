@@ -10,6 +10,7 @@ export default defineConfig({
       input: {
         main: resolve(import.meta.dirname, "index.html"),
         pusht: resolve(import.meta.dirname, "pusht/index.html"),
+        viewer: resolve(import.meta.dirname, "pusht/viewer/index.html"),
       },
     },
   },

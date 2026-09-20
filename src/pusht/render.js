@@ -110,6 +110,20 @@ export function createView(canvas) {
     context.stroke();
     context.restore();
 
+    // A second block pose, drawn behind everything: used by the viewer to show
+    // where the recorded run had the block at this point in time.
+    if (options.ghost) {
+      const ghost = teeOutline(options.ghost);
+      polygon(ghost);
+      context.fillStyle = "rgba(38, 44, 41, .10)";
+      context.fill();
+      context.setLineDash([toLength(0.01), toLength(0.008)]);
+      context.strokeStyle = "rgba(38, 44, 41, .4)";
+      context.lineWidth = 1.2;
+      context.stroke();
+      context.setLineDash([]);
+    }
+
     // Obstacles
     for (const obstacle of world.obstacles) {
       context.beginPath();
@@ -181,6 +195,34 @@ export function createView(canvas) {
           context.beginPath();
           context.arc(toX(points[0]), toY(points[1]), isChosen ? 3.2 : 1.8, 0, Math.PI * 2);
           context.fillStyle = isChosen ? "rgba(29, 102, 219, .9)" : "rgba(75, 80, 77, .35)";
+          context.fill();
+        }
+      }
+    }
+
+    // Compared trajectories, drawn up to a cursor so they can be scrubbed.
+    if (options.paths) {
+      for (const path of options.paths) {
+        const points = path.points;
+        const upto = path.cursor === undefined ? points.length / 2 : Math.min(points.length / 2, path.cursor);
+        if (upto < 2) continue;
+        context.beginPath();
+        for (let k = 0; k < upto; k++) {
+          const px = toX(points[k * 2]);
+          const py = toY(points[k * 2 + 1]);
+          if (k === 0) context.moveTo(px, py);
+          else context.lineTo(px, py);
+        }
+        context.strokeStyle = path.color;
+        context.lineWidth = path.width ?? 1.6;
+        if (path.dashed) context.setLineDash([toLength(0.009), toLength(0.007)]);
+        context.stroke();
+        context.setLineDash([]);
+        // Head marker at the cursor.
+        if (path.head !== false) {
+          context.beginPath();
+          context.arc(toX(points[(upto - 1) * 2]), toY(points[(upto - 1) * 2 + 1]), 3.4, 0, Math.PI * 2);
+          context.fillStyle = path.color;
           context.fill();
         }
       }

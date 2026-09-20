@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f3f0e8" />
+    <meta name="description" content="Replay a recorded Push-T demonstration next to the learned policy rolled out from the same start, to see where they diverge." />
+    <title>Demo Viewer — Push-T</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="site-header">
+        <a class="brand" href="../" aria-label="Back to Push-T">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Demo Viewer</span>
+        </a>
+        <div class="header-meta">
+          <span>Push-T · Replay</span>
+          <span class="live-indicator"><i></i> Local data</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="intro">
+          <div>
+            <p class="eyebrow">Expert against policy, same start</p>
+            <h1>Where it<br /><em>diverges.</em></h1>
+          </div>
+          <p class="intro-copy">
+            Every demonstration recorded on the main page is replayed here, with the learned policy rolled
+            out from the identical starting pose. Scrub to the step where the two part company.
+          </p>
+        </section>
+
+        <section class="workspace" aria-label="Demonstration viewer">
+          <article class="visualizer-card">
+            <div class="card-heading">
+              <div>
+                <p class="label">Episode replay</p>
+                <h2 id="episodeHeading">No demonstrations</h2>
+              </div>
+              <div class="phase-pill"><span></span><span id="phaseLabel">Idle</span></div>
+            </div>
+
+            <div class="canvas-shell">
+              <canvas id="arena" aria-label="Recorded and policy trajectories overlaid on the pushing arena"></canvas>
+              <div class="canvas-label canvas-label-source">Expert — solid · Policy — dashed</div>
+              <div class="canvas-label canvas-label-target"><span id="stepLabel">step 0</span></div>
+            </div>
+
+            <div class="timeline">
+              <span class="time-label">step <output id="stepOutput">0</output></span>
+              <input id="scrub" type="range" min="0" max="100" step="1" value="0" />
+              <button id="playButton" class="icon-button" type="button" aria-label="Play">▶</button>
+            </div>
+
+            <div class="legend">
+              <span><i class="line line-expert"></i> Expert pusher</span>
+              <span><i class="line line-policy"></i> Policy pusher</span>
+              <span><i class="swatch-block"></i> Policy block</span>
+              <span><i class="swatch-ghost"></i> Expert block</span>
+            </div>
+          </article>
+
+          <article class="training-card">
+            <p class="label">Episodes</p>
+            <div class="episode-list" id="episodeList"></div>
+
+            <div class="button-row">
+              <button id="rerunButton" class="primary-button" type="button">Re-run policy</button>
+              <a class="ghost-button link-button" href="../">Back to demo</a>
+            </div>
+
+            <div class="metrics">
+              <div class="metric">
+                <span>Expert steps</span>
+                <strong id="expertSteps">—</strong>
+              </div>
+              <div class="metric">
+                <span>Policy steps</span>
+                <strong id="policySteps">—</strong>
+              </div>
+              <div class="metric">
+                <span>Expert coverage</span>
+                <strong id="expertCoverage">—</strong>
+              </div>
+              <div class="metric">
+                <span>Policy coverage</span>
+                <strong id="policyCoverage">—</strong>
+              </div>
+              <div class="metric metric-wide">
+                <span>Diverges after</span>
+                <strong id="divergeStep">—</strong>
+              </div>
+            </div>
+
+            <p class="note" id="statusNote">
+              Reads the demonstrations and the trained policy cached in this browser by the main page. If
+              either is missing, record some demos and train there first.
+            </p>
+          </article>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/pusht/viewer.js"></script>
+  </body>
+</html>
