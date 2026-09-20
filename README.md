@@ -157,10 +157,10 @@ tools/tune.mjs             weight grid search
 
 In Policy mode the sampling itself is animated. The pusher holds still while a
 batch of twelve candidate action chunks is transported from Gaussian noise to
-trajectories over ten Euler steps, each drawn as a polyline in the arena: at the
-start they are independent noise, and they collapse onto the chunks the policy
-finds plausible from the current observation. One is then committed and executed
-for sixteen steps, and the cycle repeats. Watching the spread is the point — it
+trajectories over ten Euler steps. Mid-transport they are drawn as point clouds,
+because that is what they are; once converged they become polylines, and the
+committed one is the only trajectory shown while it executes for sixteen steps.
+Then the cycle repeats. Watching the spread is the point — it
 is the distribution the method exists to represent, which a regression policy
 could not show at all.
 

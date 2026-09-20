@@ -15,9 +15,11 @@ const EXECUTE = 16;
 const LIFT_ON = 0.4;
 const LIFT_OFF = -0.4;
 // Candidate chunks drawn during the flow animation, and how many frames each
-// Euler step is held for.
+// Euler step is held for. At 4 frames per step the sampling ran five times
+// longer than the motion it produced, which reads as a long wait followed by a
+// twitch; 2 frames puts the two phases at roughly equal screen time.
 const FLOW_SAMPLES = 12;
-const FLOW_HOLD = 4;
+const FLOW_HOLD = 2;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -131,6 +133,10 @@ function policyAction() {
 // Returns true while the flow is still running, i.e. while the pusher is paused.
 function advanceFlow() {
   if (!state.policyReady || world.obstacles.length !== state.policyObstacles) return false;
+  // Already committed and executing. Without this the chunk was re-committed
+  // every frame, resetting the cursor to zero before the execute loop could
+  // advance it, so the pusher replayed the first action forever.
+  if (state.chunk) return false;
 
   if (!state.sampler) {
     state.sampler = createFlowSampler(state.policy, world.writeObservation(), {
@@ -158,6 +164,7 @@ function advanceFlow() {
   state.chunk = sampler.chunk(state.chosen);
   state.chunkCursor = 0;
   captureFlow();
+  state.flow.executing = true;
   return false;
 }
 
@@ -166,7 +173,7 @@ function captureFlow() {
   if (!sampler) { state.flow = null; return; }
   const lines = [];
   for (let index = 0; index < sampler.count; index++) lines.push(sampler.polyline(index));
-  state.flow = { lines, chosen: state.chosen, progress: sampler.step / sampler.steps };
+  state.flow = { lines, chosen: state.chosen, progress: sampler.step / sampler.steps, executing: false };
 }
 
 function advance() {
@@ -389,7 +396,9 @@ function animate() {
       // The pusher is held still for the whole flow animation, so what is on
       // screen is the sampling, not a blend of sampling and motion.
       if (!advanceFlow()) {
-        for (let index = 0; index < state.speed; index++) {
+        // One simulation step per frame regardless of the speed control, so the
+        // executed trajectory is actually watchable next to the sampling.
+        for (let index = 0; index < 1; index++) {
           if (state.chunkCursor >= EXECUTE) { state.sampler = null; state.chunk = null; break; }
           advance();
           if (state.finished) break;

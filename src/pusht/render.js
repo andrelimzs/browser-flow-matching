@@ -125,27 +125,48 @@ export function createView(canvas) {
     // it is still being transported from noise, so the spread at the start and
     // the collapse onto a trajectory are both visible.
     if (options.flow?.lines?.length) {
-      const { lines, chosen, progress } = options.flow;
-      for (let index = 0; index < lines.length; index++) {
-        const points = lines[index];
-        const isChosen = index === chosen;
-        context.beginPath();
-        for (let k = 0; k < points.length; k += 2) {
-          const px = toX(points[k]);
-          const py = toY(points[k + 1]);
-          if (k === 0) context.moveTo(px, py);
-          else context.lineTo(px, py);
+      const { lines, chosen, progress, executing } = options.flow;
+      const converged = progress >= 1;
+
+      if (!converged) {
+        // Mid-transport the samples are a cloud, not a path: drawing them as
+        // points is honest about that, and the collapse from noise into
+        // structure is the thing worth watching.
+        const radius = Math.max(1.2, toLength(0.004)) * (0.7 + progress * 0.6);
+        for (let index = 0; index < lines.length; index++) {
+          const points = lines[index];
+          const isChosen = index === chosen;
+          context.fillStyle = isChosen
+            ? `rgba(29, 102, 219, ${0.3 + progress * 0.45})`
+            : `rgba(75, 80, 77, ${0.16 + progress * 0.34})`;
+          for (let k = 0; k < points.length; k += 2) {
+            context.beginPath();
+            context.arc(toX(points[k]), toY(points[k + 1]), radius, 0, Math.PI * 2);
+            context.fill();
+          }
         }
-        // Faint and thin while diffuse; firmer as the samples resolve.
-        const alpha = isChosen ? 0.25 + progress * 0.6 : 0.08 + progress * 0.22;
-        context.strokeStyle = isChosen ? `rgba(29, 102, 219, ${alpha})` : `rgba(75, 80, 77, ${alpha})`;
-        context.lineWidth = isChosen ? 2 : 1;
-        context.stroke();
-        // Head of each candidate: the first action it would execute.
-        context.beginPath();
-        context.arc(toX(points[0]), toY(points[1]), isChosen ? 3 : 1.8, 0, Math.PI * 2);
-        context.fillStyle = isChosen ? `rgba(29, 102, 219, ${0.4 + progress * 0.5})` : `rgba(75, 80, 77, ${0.2 + progress * 0.3})`;
-        context.fill();
+      } else {
+        // Converged: the samples are trajectories, so draw them as such. While
+        // the committed one is being executed only it is shown.
+        for (let index = 0; index < lines.length; index++) {
+          const isChosen = index === chosen;
+          if (executing && !isChosen) continue;
+          const points = lines[index];
+          context.beginPath();
+          for (let k = 0; k < points.length; k += 2) {
+            const px = toX(points[k]);
+            const py = toY(points[k + 1]);
+            if (k === 0) context.moveTo(px, py);
+            else context.lineTo(px, py);
+          }
+          context.strokeStyle = isChosen ? "rgba(29, 102, 219, .85)" : "rgba(75, 80, 77, .3)";
+          context.lineWidth = isChosen ? 2 : 1;
+          context.stroke();
+          context.beginPath();
+          context.arc(toX(points[0]), toY(points[1]), isChosen ? 3.2 : 1.8, 0, Math.PI * 2);
+          context.fillStyle = isChosen ? "rgba(29, 102, 219, .9)" : "rgba(75, 80, 77, .35)";
+          context.fill();
+        }
       }
     }
 
