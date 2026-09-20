@@ -702,6 +702,23 @@ function drawFlow() {
     flowCtx.beginPath(); flowCtx.moveTo(offsetX, y); flowCtx.lineTo(offsetX + fieldSize, y); flowCtx.stroke();
   }
 
+  const fieldResolution = 22;
+  const fieldLengthScale = 0.05;
+  flowCtx.strokeStyle = "rgba(29, 102, 219, .16)";
+  flowCtx.lineWidth = 1;
+  for (let gy = 0; gy < fieldResolution; gy++) {
+    for (let gx = 0; gx < fieldResolution; gx++) {
+      const x = (gx + 0.5) / fieldResolution;
+      const y = (gy + 0.5) / fieldResolution;
+      if (blockedAt(x, y, obstacles, 0)) continue;
+      const [velocityX, velocityY] = model.forward(x, y, simTime, usePathProgress ? simTime : 0);
+      flowCtx.beginPath();
+      flowCtx.moveTo(toX(x), toY(y));
+      flowCtx.lineTo(toX(x + velocityX * fieldLengthScale), toY(y + velocityY * fieldLengthScale));
+      flowCtx.stroke();
+    }
+  }
+
   const wallPixels = WALL_THICKNESS * fieldSize;
   flowCtx.fillStyle = "#202420";
   flowCtx.fillRect(offsetX, offsetY, fieldSize, wallPixels);
