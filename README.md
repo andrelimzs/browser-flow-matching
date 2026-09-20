@@ -199,10 +199,14 @@ npm run bench:flow   # batched against the per-sample loop
 - `features.js` — Fourier feature encoding, expressed as data rather than inlined
 - `flow.js` — the probability path, the time schedule, the training step, Euler sampling
 
-Correctness is a finite-difference gradient check (`tools/flow-gradcheck.mjs`):
-across all parameters the 83 gradients above `1e-2` agree to `9.3e-4`, which is the
-float32 floor rather than an error; the single worse case is a near-zero gradient
-where rounding dominates. End to end (`tools/flow-check.mjs`) the core transports
+Correctness is two independent checks (`tools/flow-gradcheck.mjs`). The primary one
+compares every gradient against a naive Float64 reference — no unrolling, no shared
+code — over seven shapes including no hidden layer, width-1 layers, deeper nets and
+widths that are not multiples of the unroll factor; all land within 1.2% of a
+combined `1e-6 + 1e-4|g|` tolerance. Finite differences then validate the reference
+itself on the shallow shapes, where float32 FD noise is small enough to trust; it
+grows with depth, which is why it cannot be the primary check.
+End to end (`tools/flow-check.mjs`) the core transports
 uniform 2D samples onto two separated clusters and populates **both** — a 48/52
 split with 3% strays — which is the property a mean-regressing model cannot show.
 

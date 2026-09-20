@@ -25,6 +25,12 @@ export class Adam {
       const moments = this.moments[index];
       const velocities = this.velocities[index];
       const gradients = grads[index];
+      // A short gradient buffer reads undefined, which puts NaN into the moment
+      // and velocity for that slot permanently — later correct gradients never
+      // recover it.
+      if (gradients.length !== values.length) {
+        throw new Error(`gradient buffer ${index} has ${gradients.length} entries, expected ${values.length}`);
+      }
       for (let i = 0; i < values.length; i++) {
         const gradient = gradients[i];
         moments[i] = this.beta1 * moments[i] + (1 - this.beta1) * gradient;

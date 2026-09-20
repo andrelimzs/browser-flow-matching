@@ -46,7 +46,8 @@ export class FlowTrainer {
     const model = this.model;
     const width = model.outputWidth;
     model.zeroGrad();
-    const out = model.forward(batch);
+    model.forward(batch);
+    const out = model.outputs(batch);
 
     let loss = 0;
     for (let index = 0; index < batch * width; index++) {
@@ -65,6 +66,7 @@ export class FlowTrainer {
 // `velocityAt(state, time, out)` is supplied by the caller so this works for a
 // single sample or a batch encoded however the task needs.
 export function eulerIntegrate(velocityAt, state, steps, dimension, scratch) {
+  if (!Number.isInteger(steps) || steps < 1) throw new Error(`steps must be a positive integer, got ${steps}`);
   const velocity = scratch ?? new Float32Array(dimension);
   const delta = 1 / steps;
   for (let step = 0; step < steps; step++) {

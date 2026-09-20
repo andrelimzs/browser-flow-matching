@@ -11,18 +11,29 @@
 // first, so the encoding is strictly additive.
 export function makeFourierEncoder({ inputWidth, bands = [] }) {
   for (const band of bands) {
-    if (band.index < 0 || band.index >= inputWidth) {
-      throw new Error(`band index ${band.index} outside input width ${inputWidth}`);
+    // A misspelled key leaves index undefined, which passes both range
+    // comparisons, reads undefined out of the raw vector and writes NaN into
+    // the model input. Nothing downstream throws: the NaN reaches Adam's
+    // moments and every weight is NaN one step later, reported as a NaN loss
+    // rather than an error. So the type is checked, not just the range.
+    if (!Number.isInteger(band.index) || band.index < 0 || band.index >= inputWidth) {
+      throw new Error(`band index ${band.index} is not an integer in [0, ${inputWidth})`);
+    }
+    if (!Array.isArray(band.frequencies) || band.frequencies.length === 0) {
+      throw new Error(`band at index ${band.index} needs a non-empty frequencies array`);
+    }
+    if (!band.frequencies.every(Number.isFinite)) {
+      throw new Error(`band at index ${band.index} has a non-finite frequency`);
     }
   }
   const extra = bands.reduce((total, band) => total + band.frequencies.length * 2, 0);
   const size = inputWidth + extra;
 
-  function encode(raw, out, offset = 0) {
-    for (let index = 0; index < inputWidth; index++) out[offset + index] = raw[index];
+  function encode(raw, out, offset = 0, rawOffset = 0) {
+    for (let index = 0; index < inputWidth; index++) out[offset + index] = raw[rawOffset + index];
     let cursor = offset + inputWidth;
     for (const band of bands) {
-      const value = raw[band.index];
+      const value = raw[rawOffset + band.index];
       for (const frequency of band.frequencies) {
         const angle = Math.PI * frequency * value;
         out[cursor++] = Math.sin(angle);
@@ -32,9 +43,12 @@ export function makeFourierEncoder({ inputWidth, bands = [] }) {
     return out;
   }
 
+  // Takes a raw offset rather than slicing: subarray allocates a view per call,
+  // which in a render loop is exactly the jank the no-allocation rule exists to
+  // avoid.
   function encodeBatch(raw, out, batch) {
     for (let sample = 0; sample < batch; sample++) {
-      encode(raw.subarray(sample * inputWidth, (sample + 1) * inputWidth), out, sample * size);
+      encode(raw, out, sample * size, sample * inputWidth);
     }
     return out;
   }

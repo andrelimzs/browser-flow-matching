@@ -45,6 +45,8 @@ export class MLP {
       this.deltas.push(new Float32Array(maxBatch * sizes[layer + 1]));
     }
 
+    this.batch = 0;
+    this.outputViews = new Map();
     this.params = [];
     this.grads = [];
     for (let layer = 0; layer < this.layers; layer++) {
@@ -68,8 +70,14 @@ export class MLP {
 
   // Runs the batch and returns the output activations, laid out
   // [sample * outputWidth + unit]. Valid until the next forward pass.
+  //
+  // The returned buffer is the full maxBatch-sized one, so anything past
+  // `batch * outputWidth` is left over from an earlier, larger pass. Callers
+  // that iterate must bound by the batch, or use outputs() below.
   forward(batch) {
+    if (!Number.isInteger(batch) || batch < 1) throw new Error(`batch must be a positive integer, got ${batch}`);
     if (batch > this.maxBatch) throw new Error(`batch ${batch} exceeds maxBatch ${this.maxBatch}`);
+    this.batch = batch;
     for (let layer = 0; layer < this.layers; layer++) {
       const inputs = this.sizes[layer];
       const outputs = this.sizes[layer + 1];
@@ -106,6 +114,17 @@ export class MLP {
     return this.activations[this.layers];
   }
 
+  // The valid region of the last forward pass. Views are cached per batch size,
+  // so this does not allocate in a steady-state loop.
+  outputs(batch = this.batch) {
+    let view = this.outputViews.get(batch);
+    if (!view) {
+      view = this.activations[this.layers].subarray(0, batch * this.outputWidth);
+      this.outputViews.set(batch, view);
+    }
+    return view;
+  }
+
   zeroGrad() {
     for (const gradient of this.grads) gradient.fill(0);
   }
@@ -114,7 +133,17 @@ export class MLP {
   // Gradients accumulate, so callers zeroGrad() when they mean to start fresh.
   backward(gradOutput, batch) {
     const last = this.layers - 1;
-    this.deltas[last].set(gradOutput.subarray(0, batch * this.sizes[this.layers]));
+    const needed = batch * this.sizes[this.layers];
+    // subarray clamps rather than throwing, so an undersized gradOutput would
+    // otherwise write a prefix and leave the rest of deltas holding whatever
+    // the previous backward pass put there — wrong gradients, no error.
+    if (gradOutput.length < needed) {
+      throw new Error(`gradOutput has ${gradOutput.length} entries, need ${needed} for batch ${batch}`);
+    }
+    if (batch !== this.batch) {
+      throw new Error(`backward batch ${batch} does not match the last forward batch ${this.batch}`);
+    }
+    this.deltas[last].set(gradOutput.subarray(0, needed));
 
     for (let layer = last; layer >= 0; layer--) {
       const inputs = this.sizes[layer];
