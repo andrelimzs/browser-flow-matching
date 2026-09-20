@@ -336,29 +336,42 @@ function nearestPathProgress(point) {
 }
 
 function makeRandomObstacles(count) {
-  const obstacles = [];
-  let attempts = 0;
-  while (obstacles.length < count && attempts < 300) {
-    attempts++;
-    const progress = 0.24 + random() * 0.52;
-    const lateral = (random() - 0.5) * 0.4;
-    const obstacle = {
-      x: clamp(progress + lateral, 0.22, 0.78),
-      y: clamp(progress - lateral, 0.22, 0.78),
-      r: 0.048 + random() * 0.022,
-    };
-    if (distance([obstacle.x, obstacle.y], START) < obstacle.r + CLEARANCE + REGION_RADIUS) continue;
-    if (distance([obstacle.x, obstacle.y], GOAL) < obstacle.r + CLEARANCE + REGION_RADIUS) continue;
-    if (obstacles.some((other) => distance([obstacle.x, obstacle.y], [other.x, other.y]) < obstacle.r + other.r + OBSTACLE_GAP)) continue;
-    obstacles.push(obstacle);
+  const density = (count - 2) / 8;
+  const minimumRadius = 0.048 - density * 0.018;
+  const maximumRadius = 0.07 - density * 0.025;
+  const minimumGap = OBSTACLE_GAP - density * 0.035;
+  let best = [];
+  for (let restart = 0; restart < 5; restart++) {
+    const obstacles = [];
+    let attempts = 0;
+    while (obstacles.length < count && attempts < 1800) {
+      attempts++;
+      const progress = 0.18 + random() * 0.64;
+      const lateral = (random() - 0.5) * 0.54;
+      const obstacle = {
+        x: progress + lateral,
+        y: progress - lateral,
+        r: minimumRadius + random() * (maximumRadius - minimumRadius),
+      };
+      const edge = WALL_THICKNESS + ROBOT_RADIUS + obstacle.r + 0.008;
+      if (obstacle.x < edge || obstacle.x > 1 - edge || obstacle.y < edge || obstacle.y > 1 - edge) continue;
+      if (distance([obstacle.x, obstacle.y], START) < obstacle.r + CLEARANCE + REGION_RADIUS) continue;
+      if (distance([obstacle.x, obstacle.y], GOAL) < obstacle.r + CLEARANCE + REGION_RADIUS) continue;
+      if (obstacles.some((other) => distance([obstacle.x, obstacle.y], [other.x, other.y]) < obstacle.r + other.r + minimumGap)) continue;
+      const candidate = [...obstacles, obstacle];
+      if (!planGridPath(candidate)) continue;
+      obstacles.push(obstacle);
+    }
+    if (obstacles.length > best.length) best = obstacles;
+    if (obstacles.length === count) return obstacles;
   }
-  return obstacles;
+  return best;
 }
 
-function generateWorld() {
+function generateWorld(count) {
   for (let attempt = 0; attempt < 120; attempt++) {
-    const obstacles = makeRandomObstacles(3);
-    if (obstacles.length < 3) continue;
+    const obstacles = makeRandomObstacles(count);
+    if (obstacles.length < count) continue;
     const gridPath = planGridPath(obstacles);
     if (!gridPath) continue;
     const shortened = shortcutPath(gridPath, obstacles);
@@ -366,14 +379,11 @@ function generateWorld() {
     const route = resamplePath(smoothed, PATH_SAMPLES);
     if (!pathIsClear(route.samples, obstacles)) continue;
     const nearbyObstacles = obstacles.filter((obstacle) => distanceToPath([obstacle.x, obstacle.y], route.samples) < obstacle.r + ROBOT_RADIUS + CLEARANCE + BARRIER_INFLUENCE).length;
-    if (route.length < distance(START, GOAL) * 1.035 || route.length > 1.3 || nearbyObstacles < 2) continue;
+    const maximumRouteLength = 1.3 + Math.max(0, count - 3) * 0.025;
+    if (route.length < distance(START, GOAL) * 1.035 || route.length > maximumRouteLength || nearbyObstacles < Math.min(2, count)) continue;
     return { obstacles, path: route.samples, length: route.length, waypoints: shortened.length };
   }
-  const obstacles = [
-    { x: 0.34, y: 0.39, r: 0.06 },
-    { x: 0.57, y: 0.5, r: 0.06 },
-    { x: 0.68, y: 0.7, r: 0.055 },
-  ];
+  const obstacles = makeRandomObstacles(count);
   const gridPath = planGridPath(obstacles);
   const shortened = shortcutPath(gridPath, obstacles);
   const route = resamplePath(smoothSafePath(shortened, obstacles), PATH_SAMPLES);
@@ -557,7 +567,8 @@ class TinyMLP {
   }
 }
 
-let world = generateWorld();
+let obstacleCount = 3;
+let world = generateWorld(obstacleCount);
 let obstacles = world.obstacles;
 let referencePath = world.path;
 let usePathProgress = false;
@@ -971,7 +982,20 @@ document.querySelectorAll("[data-inference-steps]").forEach((button) => {
 
 $("#resampleButton").addEventListener("click", () => {
   seed = (Date.now() ^ 0x85ebca6b) >>> 0;
-  world = generateWorld();
+  world = generateWorld(obstacleCount);
+  obstacles = world.obstacles;
+  referencePath = world.path;
+  resetModelForWorld();
+});
+
+$("#obstacleSlider").addEventListener("input", (event) => {
+  $("#obstacleOutput").value = event.target.value;
+});
+
+$("#obstacleSlider").addEventListener("change", (event) => {
+  obstacleCount = Number(event.target.value);
+  seed = (Date.now() ^ obstacleCount ^ 0x27d4eb2d) >>> 0;
+  world = generateWorld(obstacleCount);
   obstacles = world.obstacles;
   referencePath = world.path;
   resetModelForWorld();

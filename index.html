@@ -78,6 +78,14 @@
               <button id="progressToggle" class="mode-toggle" type="button" aria-pressed="false">Off</button>
             </div>
 
+            <div class="solver-setting">
+              <label for="obstacleSlider">Obstacles</label>
+              <div class="range-setting">
+                <input id="obstacleSlider" type="range" min="2" max="10" value="3" step="1" aria-label="Number of obstacles" />
+                <output id="obstacleOutput" for="obstacleSlider">3</output>
+              </div>
+            </div>
+
             <div class="legend" aria-hidden="true">
               <span><i class="dot dot-particle"></i>Flow samples</span>
               <span><i class="line line-field"></i>GT path · start → goal</span>
