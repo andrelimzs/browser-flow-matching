@@ -9,7 +9,9 @@
     "preview": "vite preview --host 0.0.0.0",
     "check:pusht": "node tools/sim-check.mjs && node tools/replay-check.mjs && node tools/demo-check.mjs",
     "bench:pusht": "node tools/expert-bench.mjs 150 1 2200",
-    "tune:pusht": "node tools/tune.mjs"
+    "tune:pusht": "node tools/tune.mjs",
+    "check:flow": "node tools/flow-gradcheck.mjs && node tools/flow-check.mjs",
+    "bench:flow": "node tools/flow-bench.mjs"
   },
   "devDependencies": {
     "vite": "^7.1.5"

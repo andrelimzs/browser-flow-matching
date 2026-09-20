@@ -180,3 +180,65 @@ quiet fix:
 - **Path shortcutting is skipped at force-opened endpoints.** When the block starts inside inflated
   geometry, `clear()` re-tests the anchor and fails, so the grid staircase survives for that one leg.
   Costs an extra waypoint or two, never an invalid path.
+
+---
+
+# Flow core (`src/flow/`)
+
+Shared, batched flow-matching primitives, extracted from the planner demo so the
+pushing policy does not end up with a second copy that drifts.
+
+```bash
+npm run check:flow   # gradient check, then a bimodal end-to-end test
+npm run bench:flow   # batched against the per-sample loop
+```
+
+- `mlp.js` — batched MLP, arbitrary depth, tanh hidden layers and a linear output,
+  row-major typed arrays, no allocation after construction, JSON save/load
+- `adam.js` — Adam with bias correction over a list of parameter buffers
+- `features.js` — Fourier feature encoding, expressed as data rather than inlined
+- `flow.js` — the probability path, the time schedule, the training step, Euler sampling
+
+Correctness is a finite-difference gradient check (`tools/flow-gradcheck.mjs`):
+across all parameters the 83 gradients above `1e-2` agree to `9.3e-4`, which is the
+float32 floor rather than an error; the single worse case is a near-zero gradient
+where rounding dominates. End to end (`tools/flow-check.mjs`) the core transports
+uniform 2D samples onto two separated clusters and populates **both** — a 48/52
+split with 3% strays — which is the property a mean-regressing model cannot show.
+
+## Batching is not a speedup in JavaScript
+
+Worth stating plainly, because the opposite is widely assumed and it was the
+premise this extraction started from. At `20->64->64->2`:
+
+| | samples/s | relative |
+|---|---|---|
+| per-sample loop | 92,600 | 1.00x |
+| batched, batch 96 / 256 / 1024 | ~83,700 | **0.90x** |
+
+The batched version is ~10% *slower*, flat across batch size. The per-sample code
+it replaced was already allocation-free over flat typed arrays with a good loop
+order, so there was no overhead to amortise, and batching only adds offset
+arithmetic and activation traffic. Four-accumulator unrolling of the inner dot
+product recovers about 1.25x on the matmul in isolation (0.96 -> 1.19 Gmac/s) and
+is applied, but does not close the gap.
+
+The speedup people associate with batching comes from dispatching to BLAS — cache
+blocking and SIMD. Plain JS loops get neither. Batching here buys a shared API and
+the precondition for WebGPU, not throughput.
+
+## Training budget
+
+Measured per optimizer step, batch 256:
+
+| shape | ms/step | params | steps in 10s |
+|---|---|---|---|
+| `20->64->64->2` (planner, batch 96) | 1.14 | 5.6k | 8,700 |
+| `48->128->128->16` | 12.0 | 25k | 830 |
+| `48->256->256->16` | 40.1 | 82k | 250 |
+| `48->512->512->16` | 146.6 | 296k | 68 |
+
+A policy-sized network trains at hundreds of steps per ten seconds, not thousands.
+Behaviour cloning wants thousands, so live in-browser training of the pushing
+policy is a one-to-two minute job at `256` wide — which is a constraint on how the
+demo is framed, not a detail.
