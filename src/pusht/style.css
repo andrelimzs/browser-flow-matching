@@ -140,6 +140,7 @@ button { color: inherit; }
 .metric span { display: block; font-family: "DM Mono", monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 7px; }
 .metric strong { font-size: 19px; letter-spacing: -.02em; font-weight: 600; }
 .metric-wide strong { font-size: 17px; }
+#stateMetric { display: block; font-size: 14px; line-height: 23px; white-space: nowrap; }
 
 .footer-row { margin-top: 16px; margin-bottom: 0; }
 .footer-row-three { grid-template-columns: 1fr 1fr 1fr; }
