@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f3f0e8" />
+    <meta
+      name="description"
+      content="A quasi-static planar pushing simulator in the browser: a circular pusher aligns a T-shaped block with a goal pose around obstacles, with scripted and mouse-recorded demonstrations."
+    />
+    <title>Push-T — Browser Planar Pushing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="site-header">
+        <a class="brand" href="../" aria-label="Back to Flow Planner">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Push-T</span>
+        </a>
+        <div class="header-meta">
+          <span>Experiment 03 · Manipulation</span>
+          <span class="live-indicator"><i></i> Local compute</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="intro">
+          <div>
+            <p class="eyebrow">Nonprehensile pushing, quasi-static</p>
+            <h1>Push it into<br /><em>place.</em></h1>
+          </div>
+          <p class="intro-copy">
+            A circular pusher has to align a T-shaped block with a goal pose, without grasping it and without
+            disturbing the obstacles. To move the block one way the pusher must stand on the opposite side, so
+            every correction begins with a decision about which way to travel around it.
+          </p>
+        </section>
+
+        <section class="workspace" aria-label="Planar pushing simulator">
+          <article class="visualizer-card">
+            <div class="card-heading">
+              <div>
+                <p class="label">Quasi-static contact</p>
+                <h2 id="modeHeading">Scripted expert</h2>
+              </div>
+              <div class="phase-pill"><span></span><span id="phaseLabel">Idle</span></div>
+            </div>
+
+            <div class="canvas-shell">
+              <canvas id="arena" aria-label="A circular pusher aligning a T-shaped block with a dashed goal pose among circular obstacles"></canvas>
+              <div class="canvas-label canvas-label-source">Block → goal pose</div>
+              <div class="canvas-label canvas-label-target"><span id="coverageLabel">coverage 0%</span></div>
+              <button id="newWorld" class="canvas-action" type="button" title="Generate a new layout">
+                <span aria-hidden="true">↻</span> New world
+              </button>
+              <div id="teleopHint" class="teleop-hint" hidden>Move the cursor to steer the pusher</div>
+            </div>
+
+            <div class="legend">
+              <span><i class="dot"></i> Pusher</span>
+              <span><i class="swatch-block"></i> Block</span>
+              <span><i class="swatch-goal"></i> Goal pose</span>
+              <span><i class="tile"></i> Obstacle</span>
+            </div>
+          </article>
+
+          <article class="training-card">
+            <p class="label">Controls</p>
+
+            <div class="mode-row" role="group" aria-label="Control mode">
+              <button id="modeExpert" class="mode-toggle" type="button" aria-pressed="true">Expert</button>
+              <button id="modeTeleop" class="mode-toggle" type="button" aria-pressed="false">Teleop</button>
+            </div>
+
+            <div class="button-row">
+              <button id="runButton" class="primary-button" type="button">Run</button>
+              <button id="resetButton" class="ghost-button" type="button">Reset</button>
+            </div>
+
+            <div class="solver-setting">
+              <span>Obstacles</span>
+              <div class="range-setting">
+                <input id="obstacleRange" type="range" min="0" max="4" step="1" value="1" />
+                <output id="obstacleOutput">1</output>
+              </div>
+            </div>
+
+            <div class="solver-setting">
+              <span>Speed</span>
+              <div class="step-options" role="group" aria-label="Simulation speed">
+                <button type="button" data-speed="1" aria-pressed="false">1×</button>
+                <button type="button" data-speed="2" aria-pressed="true">2×</button>
+                <button type="button" data-speed="4" aria-pressed="false">4×</button>
+              </div>
+            </div>
+
+            <div class="solver-setting">
+              <span>Orbit tie-break</span>
+              <div class="step-options" role="group" aria-label="Expert orbit tie-break">
+                <button type="button" data-tie="random" aria-pressed="true">Random</button>
+                <button type="button" data-tie="cw" aria-pressed="false">CW</button>
+                <button type="button" data-tie="ccw" aria-pressed="false">CCW</button>
+              </div>
+            </div>
+
+            <p class="label demos-label">Demonstrations</p>
+
+            <div class="button-row">
+              <button id="recordButton" class="primary-button" type="button">Record</button>
+              <button id="collectButton" class="ghost-button" type="button">Collect 10</button>
+            </div>
+
+            <div class="metrics">
+              <div class="metric metric-wide">
+                <span>Coverage of goal footprint</span>
+                <strong id="coverageMetric">0.0%</strong>
+              </div>
+              <div class="metric">
+                <span>Steps</span>
+                <strong id="stepsMetric">0</strong>
+              </div>
+              <div class="metric">
+                <span>Expert state</span>
+                <strong id="stateMetric">idle</strong>
+              </div>
+              <div class="metric">
+                <span>Demos</span>
+                <strong id="demoMetric">0</strong>
+              </div>
+              <div class="metric">
+                <span>Success rate</span>
+                <strong id="successMetric">—</strong>
+              </div>
+              <div class="metric metric-wide">
+                <span>Recorded transitions</span>
+                <strong id="transitionMetric">0</strong>
+              </div>
+            </div>
+
+            <div class="button-row footer-row">
+              <button id="exportButton" class="text-button" type="button">Export JSON</button>
+              <button id="clearButton" class="text-button" type="button">Clear demos</button>
+            </div>
+
+            <p class="note" id="statusNote">
+              Demonstrations are kept in this browser only. Record a few by hand, or collect them from the
+              scripted expert, then export the set as JSON.
+            </p>
+          </article>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/pusht/main.js"></script>
+  </body>
+</html>

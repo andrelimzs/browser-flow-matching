@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "check:pusht": "node tools/sim-check.mjs && node tools/replay-check.mjs && node tools/demo-check.mjs",
+    "bench:pusht": "node tools/expert-bench.mjs 150 1 2200",
+    "tune:pusht": "node tools/tune.mjs"
   },
   "devDependencies": {
     "vite": "^7.1.5"
