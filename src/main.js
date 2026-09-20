@@ -7,14 +7,15 @@ const LR = 0.002;
 const PARTICLE_COUNT = 180;
 const GRID_SIZE = 44;
 const PATH_SAMPLES = 96;
-const START = [0.11, 0.12];
-const GOAL = [0.89, 0.88];
+const START = [0.16, 0.16];
+const GOAL = [0.84, 0.84];
 const REGION_RADIUS = 0.055;
 const ROBOT_RADIUS = 0.014;
 const CLEARANCE = 0.065;
 const PLAN_CLEARANCE = 0.088;
-const PATH_CONTRACTION = 2.4;
-const TRAIN_CORRIDOR_RADIUS = 0.09;
+const WALL_THICKNESS = 0.04;
+const OBSTACLE_GAP = 0.075;
+const PATH_WIDTH = 0.006;
 
 const $ = (selector) => document.querySelector(selector);
 const flowCanvas = $("#flowCanvas");
@@ -52,6 +53,61 @@ function pointSegmentDistance(point, start, end) {
   if (denominator === 0) return distance(point, start);
   const amount = clamp(((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / denominator, 0, 1);
   return Math.hypot(point[0] - (start[0] + dx * amount), point[1] - (start[1] + dy * amount));
+}
+
+function pairPointClouds(sources, targets) {
+  const count = targets.length;
+  const rowPotential = new Float64Array(count + 1);
+  const columnPotential = new Float64Array(count + 1);
+  const matchedRow = new Uint16Array(count + 1);
+  const previousColumn = new Uint16Array(count + 1);
+  const minimumValue = new Float64Array(count + 1);
+  const used = new Uint8Array(count + 1);
+  for (let row = 1; row <= count; row++) {
+    matchedRow[0] = row;
+    minimumValue.fill(Infinity);
+    used.fill(0);
+    let column = 0;
+    do {
+      used[column] = 1;
+      const activeRow = matchedRow[column];
+      const target = targets[activeRow - 1];
+      let delta = Infinity;
+      let nextColumn = 0;
+      for (let candidate = 1; candidate <= count; candidate++) {
+        if (used[candidate]) continue;
+        const source = sources[candidate - 1];
+        const dx = target[0] - source[0];
+        const dy = target[1] - source[1];
+        const reducedCost = dx * dx + dy * dy - rowPotential[activeRow] - columnPotential[candidate];
+        if (reducedCost < minimumValue[candidate]) {
+          minimumValue[candidate] = reducedCost;
+          previousColumn[candidate] = column;
+        }
+        if (minimumValue[candidate] < delta) {
+          delta = minimumValue[candidate];
+          nextColumn = candidate;
+        }
+      }
+      for (let candidate = 0; candidate <= count; candidate++) {
+        if (used[candidate]) {
+          rowPotential[matchedRow[candidate]] += delta;
+          columnPotential[candidate] -= delta;
+        } else {
+          minimumValue[candidate] -= delta;
+        }
+      }
+      column = nextColumn;
+    } while (matchedRow[column] !== 0);
+    do {
+      const previous = previousColumn[column];
+      matchedRow[column] = matchedRow[previous];
+      column = previous;
+    } while (column !== 0);
+  }
+  const pairing = new Uint16Array(count);
+  for (let column = 1; column <= count; column++) pairing[matchedRow[column] - 1] = column - 1;
+  return pairing;
 }
 
 class MinHeap {
@@ -92,14 +148,16 @@ class MinHeap {
 }
 
 function blockedAt(x, y, obstacles, padding = PLAN_CLEARANCE) {
-  if (x < ROBOT_RADIUS || x > 1 - ROBOT_RADIUS || y < ROBOT_RADIUS || y > 1 - ROBOT_RADIUS) return true;
-  return obstacles.some((obstacle) => Math.hypot(x - obstacle.x, y - obstacle.y) <= obstacle.r + padding);
+  const boundary = WALL_THICKNESS + ROBOT_RADIUS + padding;
+  if (x < boundary || x > 1 - boundary || y < boundary || y > 1 - boundary) return true;
+  return obstacles.some((obstacle) => Math.hypot(x - obstacle.x, y - obstacle.y) <= obstacle.r + ROBOT_RADIUS + padding);
 }
 
 function segmentIsClear(start, end, obstacles, padding = PLAN_CLEARANCE) {
-  if (start[0] < ROBOT_RADIUS || start[0] > 1 - ROBOT_RADIUS || start[1] < ROBOT_RADIUS || start[1] > 1 - ROBOT_RADIUS) return false;
-  if (end[0] < ROBOT_RADIUS || end[0] > 1 - ROBOT_RADIUS || end[1] < ROBOT_RADIUS || end[1] > 1 - ROBOT_RADIUS) return false;
-  return obstacles.every((obstacle) => pointSegmentDistance([obstacle.x, obstacle.y], start, end) > obstacle.r + padding);
+  const boundary = WALL_THICKNESS + ROBOT_RADIUS + padding;
+  if (start[0] < boundary || start[0] > 1 - boundary || start[1] < boundary || start[1] > 1 - boundary) return false;
+  if (end[0] < boundary || end[0] > 1 - boundary || end[1] < boundary || end[1] > 1 - boundary) return false;
+  return obstacles.every((obstacle) => pointSegmentDistance([obstacle.x, obstacle.y], start, end) > obstacle.r + ROBOT_RADIUS + padding);
 }
 
 function planGridPath(obstacles) {
@@ -242,21 +300,29 @@ function resamplePath(path, count) {
   return { samples, length: totalLength };
 }
 
+function distanceToPath(point, path = referencePath) {
+  let minimum = Infinity;
+  for (let i = 1; i < path.length; i++) {
+    minimum = Math.min(minimum, pointSegmentDistance(point, path[i - 1], path[i]));
+  }
+  return minimum;
+}
+
 function makeRandomObstacles(count) {
   const obstacles = [];
   let attempts = 0;
   while (obstacles.length < count && attempts < 300) {
     attempts++;
     const progress = 0.24 + random() * 0.52;
-    const lateral = (random() - 0.5) * 0.34;
+    const lateral = (random() - 0.5) * 0.4;
     const obstacle = {
-      x: clamp(progress + lateral, 0.2, 0.8),
-      y: clamp(progress - lateral, 0.2, 0.8),
-      r: 0.062 + random() * 0.042,
+      x: clamp(progress + lateral, 0.22, 0.78),
+      y: clamp(progress - lateral, 0.22, 0.78),
+      r: 0.048 + random() * 0.022,
     };
     if (distance([obstacle.x, obstacle.y], START) < obstacle.r + CLEARANCE + REGION_RADIUS) continue;
     if (distance([obstacle.x, obstacle.y], GOAL) < obstacle.r + CLEARANCE + REGION_RADIUS) continue;
-    if (obstacles.some((other) => distance([obstacle.x, obstacle.y], [other.x, other.y]) < obstacle.r + other.r + 0.035)) continue;
+    if (obstacles.some((other) => distance([obstacle.x, obstacle.y], [other.x, other.y]) < obstacle.r + other.r + OBSTACLE_GAP)) continue;
     obstacles.push(obstacle);
   }
   return obstacles;
@@ -271,13 +337,14 @@ function generateWorld() {
     const shortened = shortcutPath(gridPath, obstacles);
     const smoothed = smoothSafePath(shortened, obstacles);
     const route = resamplePath(smoothed, PATH_SAMPLES);
-    if (route.length < distance(START, GOAL) * 1.035 || route.length > 1.34) continue;
+    const nearbyObstacles = obstacles.filter((obstacle) => distanceToPath([obstacle.x, obstacle.y], route.samples) < obstacle.r + ROBOT_RADIUS + PLAN_CLEARANCE + 0.045).length;
+    if (route.length < distance(START, GOAL) * 1.035 || route.length > 1.3 || nearbyObstacles < 2) continue;
     return { obstacles, path: route.samples, length: route.length, waypoints: shortened.length };
   }
   const obstacles = [
-    { x: 0.36, y: 0.34, r: 0.09 },
-    { x: 0.55, y: 0.58, r: 0.09 },
-    { x: 0.7, y: 0.44, r: 0.07 },
+    { x: 0.34, y: 0.39, r: 0.06 },
+    { x: 0.57, y: 0.5, r: 0.06 },
+    { x: 0.68, y: 0.7, r: 0.055 },
   ];
   const gridPath = planGridPath(obstacles);
   const shortened = shortcutPath(gridPath, obstacles);
@@ -294,13 +361,25 @@ function referenceState(time) {
   return [start[0] * (1 - amount) + end[0] * amount, start[1] * (1 - amount) + end[1] * amount];
 }
 
-function referenceVelocity(time) {
-  const scaled = clamp(time, 0, 1 - Number.EPSILON) * (referencePath.length - 1);
-  const index = Math.min(referencePath.length - 2, Math.floor(scaled));
-  return [
-    (referencePath[index + 1][0] - referencePath[index][0]) * (referencePath.length - 1),
-    (referencePath[index + 1][1] - referencePath[index][1]) * (referencePath.length - 1),
-  ];
+function sampleUniformFree() {
+  const minimum = WALL_THICKNESS + ROBOT_RADIUS + 0.008;
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const point = [minimum + random() * (1 - minimum * 2), minimum + random() * (1 - minimum * 2)];
+    if (!blockedAt(point[0], point[1], obstacles, 0)) return point;
+  }
+  return [...START];
+}
+
+function samplePathPoint() {
+  const time = random();
+  const point = referenceState(time);
+  const before = referenceState(Math.max(0, time - 0.01));
+  const after = referenceState(Math.min(1, time + 0.01));
+  const tangentX = after[0] - before[0];
+  const tangentY = after[1] - before[1];
+  const tangentLength = Math.max(1e-6, Math.hypot(tangentX, tangentY));
+  const offset = (random() * 2 - 1) * PATH_WIDTH;
+  return [point[0] - (tangentY / tangentLength) * offset, point[1] + (tangentX / tangentLength) * offset];
 }
 
 function xavier(size, fanIn, fanOut) {
@@ -374,19 +453,19 @@ class TinyMLP {
 
   trainBatch() {
     for (const gradient of this.grads) gradient.fill(0);
+    const sources = Array.from({ length: BATCH }, sampleUniformFree);
+    const targets = Array.from({ length: BATCH }, samplePathPoint);
+    const pairing = pairPointClouds(sources, targets);
     let loss = 0;
     for (let sample = 0; sample < BATCH; sample++) {
-      const time = random() < 0.2 ? random() * 0.12 : random();
-      const base = referenceState(time);
-      const baseVelocity = referenceVelocity(time);
-      const sourceOffset = sampleDisk(TRAIN_CORRIDOR_RADIUS);
-      const envelope = Math.exp(-PATH_CONTRACTION * time);
-      const offsetX = sourceOffset[0] * envelope;
-      const offsetY = sourceOffset[1] * envelope;
-      const x = base[0] + offsetX;
-      const y = base[1] + offsetY;
-      const targetX = baseVelocity[0] - PATH_CONTRACTION * offsetX;
-      const targetY = baseVelocity[1] - PATH_CONTRACTION * offsetY;
+      const source = sources[pairing[sample]];
+      const target = targets[sample];
+      const timeSample = random() < 0.5 ? random() : 1 - random() ** 2;
+      const time = 0.01 + timeSample * 0.98;
+      const x = source[0] * (1 - time) + target[0] * time;
+      const y = source[1] * (1 - time) + target[1] * time;
+      const targetX = target[0] - source[0];
+      const targetY = target[1] - source[1];
       const output = this.forward(x, y, time);
       const errorX = output[0] - targetX;
       const errorY = output[1] - targetY;
@@ -458,18 +537,13 @@ let lastFrame = performance.now();
 let telemetryAt = performance.now();
 let telemetrySteps = 0;
 let measuredSpeed = 0;
-let latestSuccessRate = null;
-
-function pathIsSafe(path) {
-  return path.every(([x, y]) => !blockedAt(x, y, obstacles, ROBOT_RADIUS));
-}
+let latestPathRate = null;
+let latestCoverageRate = null;
 
 function resetParticles() {
   particles = Array.from({ length: PARTICLE_COUNT }, () => {
-    const offset = sampleDisk(REGION_RADIUS * 0.72);
-    const x = START[0] + offset[0];
-    const y = START[1] + offset[1];
-    return { x, y, x0: x, y0: y, tail: [], path: [], safe: true };
+    const [x, y] = sampleUniformFree();
+    return { x, y, x0: x, y0: y, tail: [], path: [] };
   });
   buildParticlePaths();
   simTime = 0;
@@ -491,7 +565,6 @@ function buildParticlePaths() {
       y += velocityY * dt;
       particle.path.push([x, y]);
     }
-    particle.safe = pathIsSafe(particle.path);
     particle.tail = [];
   }
 }
@@ -518,7 +591,7 @@ function setParticlesTo(time, keepTails = false, rounding = "nearest") {
 function syncTimeUI() {
   $("#timeSlider").value = simTime;
   $("#timeOutput").value = simTime.toFixed(2);
-  const phase = simTime < 0.04 ? "Start region" : simTime > 0.96 ? "Goal region" : "Navigating";
+  const phase = simTime < 0.04 ? "Uniform source" : simTime > 0.96 ? "Full trajectory" : "Matching path";
   $("#phaseLabel").textContent = phase;
 }
 
@@ -584,9 +657,16 @@ function drawFlow() {
     flowCtx.beginPath(); flowCtx.moveTo(offsetX, y); flowCtx.lineTo(offsetX + fieldSize, y); flowCtx.stroke();
   }
 
+  const wallPixels = WALL_THICKNESS * fieldSize;
+  flowCtx.fillStyle = "#202420";
+  flowCtx.fillRect(offsetX, offsetY, fieldSize, wallPixels);
+  flowCtx.fillRect(offsetX, offsetY + fieldSize - wallPixels, fieldSize, wallPixels);
+  flowCtx.fillRect(offsetX, offsetY, wallPixels, fieldSize);
+  flowCtx.fillRect(offsetX + fieldSize - wallPixels, offsetY, wallPixels, fieldSize);
+
   for (const obstacle of obstacles) {
     flowCtx.beginPath();
-    flowCtx.arc(toX(obstacle.x), toY(obstacle.y), (obstacle.r + CLEARANCE) * fieldSize, 0, Math.PI * 2);
+    flowCtx.arc(toX(obstacle.x), toY(obstacle.y), (obstacle.r + ROBOT_RADIUS + CLEARANCE) * fieldSize, 0, Math.PI * 2);
     flowCtx.fillStyle = "rgba(237, 107, 85, .055)";
     flowCtx.fill();
     flowCtx.setLineDash([4, 5]);
@@ -634,7 +714,7 @@ function drawFlow() {
       for (let column = 1; column < divisions; column++) {
         const x = column / divisions;
         const y = row / divisions;
-        if (blockedAt(x, y, obstacles, ROBOT_RADIUS)) continue;
+        if (blockedAt(x, y, obstacles, 0)) continue;
         const [velocityX, velocityY] = model.forward(x, y, simTime);
         drawArrow(flowCtx, toX(x), toY(y), velocityX, -velocityY, 0.2);
       }
@@ -649,20 +729,20 @@ function drawFlow() {
         else flowCtx.lineTo(toX(point[0]), toY(point[1]));
       });
       flowCtx.lineTo(toX(particle.x), toY(particle.y));
-      flowCtx.strokeStyle = particle.safe ? "rgba(237, 107, 85, .18)" : "rgba(190, 48, 35, .28)";
+      flowCtx.strokeStyle = "rgba(237, 107, 85, .18)";
       flowCtx.lineWidth = 1;
       flowCtx.stroke();
     }
     flowCtx.beginPath();
     flowCtx.arc(toX(particle.x), toY(particle.y), width < 520 ? 2.1 : 2.45, 0, Math.PI * 2);
-    flowCtx.fillStyle = particle.safe ? "rgba(226, 79, 58, .8)" : "rgba(160, 35, 29, .9)";
+    flowCtx.fillStyle = "rgba(226, 79, 58, .8)";
     flowCtx.fill();
   }
 
   flowCtx.fillStyle = "rgba(25, 28, 27, .44)";
   flowCtx.font = "10px DM Mono, monospace";
   flowCtx.textAlign = "left";
-  flowCtx.fillText(`LEARNED CONTROLLER · STEP ${model.step.toLocaleString()}`, 15, height - 16);
+  flowCtx.fillText(`LEARNED PATH DISTRIBUTION · STEP ${model.step.toLocaleString()}`, 15, height - 16);
 }
 
 function drawLoss() {
@@ -722,7 +802,9 @@ function updateTelemetry() {
   $("#stepMetric").textContent = model.step.toLocaleString();
   $("#lossMetric").textContent = smoothedLoss === null ? "—" : smoothedLoss.toFixed(4);
   $("#speedMetric").textContent = measuredSpeed ? Math.round(measuredSpeed) : "—";
-  $("#hitMetric").textContent = latestSuccessRate === null ? "—" : `${Math.round(latestSuccessRate * 100)}%`;
+  $("#hitMetric").textContent = latestPathRate === null
+    ? "—"
+    : `${Math.round(latestPathRate * 100)}% on path · ${Math.round(latestCoverageRate * 100)}% covered`;
   $("#obstacleSummary").textContent = String(obstacles.length);
   $("#routeSummary").textContent = world.length.toFixed(2);
   if (lossHistory.length > 12) {
@@ -734,11 +816,27 @@ function updateTelemetry() {
 }
 
 function evaluateRollouts() {
-  const successes = particles.filter((particle) => {
+  const occupiedBins = new Set();
+  let onPath = 0;
+  const binCount = 20;
+  for (const particle of particles) {
     const endpoint = particle.path[particle.path.length - 1];
-    return particle.safe && distance(endpoint, GOAL) <= REGION_RADIUS;
-  }).length;
-  latestSuccessRate = successes / particles.length;
+    let nearestIndex = 0;
+    let nearestDistance = Infinity;
+    for (let i = 0; i < referencePath.length; i++) {
+      const candidateDistance = distance(endpoint, referencePath[i]);
+      if (candidateDistance < nearestDistance) {
+        nearestDistance = candidateDistance;
+        nearestIndex = i;
+      }
+    }
+    if (nearestDistance <= 0.035) {
+      onPath++;
+      occupiedBins.add(Math.min(binCount - 1, Math.floor((nearestIndex / referencePath.length) * binCount)));
+    }
+  }
+  latestPathRate = onPath / particles.length;
+  latestCoverageRate = occupiedBins.size / binCount;
 }
 
 function animate(now) {
@@ -787,14 +885,15 @@ function resetModelForWorld() {
   lossHistory = [];
   lossRecordEvery = 6;
   smoothedLoss = null;
-  latestSuccessRate = null;
+  latestPathRate = null;
+  latestCoverageRate = null;
   training = true;
   flowPlaying = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   $("#trainingToggle").innerHTML = '<span aria-hidden="true">Ⅱ</span> Pause';
-  $("#trainingStatus").textContent = "Learning the A* demonstration";
+  $("#trainingStatus").textContent = "Matching uniform samples to the path";
   $("#lossTrend").textContent = "Collecting data";
   $("#flowToggle").innerHTML = flowPlaying ? '<span aria-hidden="true">Ⅱ</span>' : '<span aria-hidden="true">▶</span>';
-  $("#flowToggle").setAttribute("aria-label", flowPlaying ? "Pause robot animation" : "Play robot animation");
+  $("#flowToggle").setAttribute("aria-label", flowPlaying ? "Pause flow animation" : "Play flow animation");
   resetParticles();
   updateTelemetry();
   drawLoss();
@@ -803,20 +902,20 @@ function resetModelForWorld() {
 $("#trainingToggle").addEventListener("click", () => {
   training = !training;
   $("#trainingToggle").innerHTML = training ? '<span aria-hidden="true">Ⅱ</span> Pause' : '<span aria-hidden="true">▶</span> Train';
-  $("#trainingStatus").textContent = training ? "Learning the A* demonstration" : "Controller weights are frozen";
+  $("#trainingStatus").textContent = training ? "Matching uniform samples to the path" : "Flow weights are frozen";
 });
 
 $("#flowToggle").addEventListener("click", () => {
   flowPlaying = !flowPlaying;
   if (flowPlaying) playbackTime = simTime;
   $("#flowToggle").innerHTML = flowPlaying ? '<span aria-hidden="true">Ⅱ</span>' : '<span aria-hidden="true">▶</span>';
-  $("#flowToggle").setAttribute("aria-label", flowPlaying ? "Pause robot animation" : "Play robot animation");
+  $("#flowToggle").setAttribute("aria-label", flowPlaying ? "Pause flow animation" : "Play flow animation");
 });
 
 $("#timeSlider").addEventListener("input", (event) => {
   flowPlaying = false;
   $("#flowToggle").innerHTML = '<span aria-hidden="true">▶</span>';
-  $("#flowToggle").setAttribute("aria-label", "Play robot animation");
+  $("#flowToggle").setAttribute("aria-label", "Play flow animation");
   playbackTime = Number(event.target.value);
   setParticlesTo(playbackTime);
   playbackTime = simTime;
@@ -837,7 +936,8 @@ document.querySelectorAll("[data-inference-steps]").forEach((button) => {
       option.setAttribute("aria-pressed", String(option === button));
     });
     $("#inferenceSummary").textContent = `${inferenceSteps} Euler ${inferenceSteps === 1 ? "step" : "steps"}`;
-    latestSuccessRate = null;
+    latestPathRate = null;
+    latestCoverageRate = null;
     buildParticlePaths();
     lastInferenceCheckpoint = -1;
     playbackTime = currentTime;
@@ -867,6 +967,6 @@ resetParticles();
 updateTelemetry();
 if (!flowPlaying) {
   $("#flowToggle").innerHTML = '<span aria-hidden="true">▶</span>';
-  $("#flowToggle").setAttribute("aria-label", "Play robot animation");
+  $("#flowToggle").setAttribute("aria-label", "Play flow animation");
 }
 requestAnimationFrame(animate);

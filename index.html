@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#f3f0e8" />
     <meta
       name="description"
-      content="Train a tiny flow-matching controller in your browser and watch it learn a collision-free robot path."
+      content="Train a tiny flow-matching model in your browser to transform uniform samples into a complete planned robot trajectory."
     />
     <title>Flow Planner — Browser Robot Navigation</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -29,11 +29,11 @@
       <main>
         <section class="intro">
           <div>
-            <p class="eyebrow">A tiny motion policy, training live</p>
-            <h1>Learn the way<br /><em>around.</em></h1>
+            <p class="eyebrow">A trajectory distribution, training live</p>
+            <h1>Learn the whole<br /><em>route.</em></h1>
           </div>
           <p class="intro-copy">
-            A* finds a clearance-aware route through a random obstacle field. A 3-layer neural network then learns to drive robots along it—entirely in your browser.
+            A* threads a safe route through a walled obstacle field. A 3-layer neural network then transports uniform free-space samples onto every part of that route.
           </p>
         </section>
 
@@ -41,16 +41,16 @@
           <article class="visualizer-card">
             <div class="card-heading">
               <div>
-                <p class="label">Learned navigation</p>
-                <h2>Robot rollouts</h2>
+                <p class="label">Learned distribution</p>
+                <h2>Full-path matching</h2>
               </div>
               <div class="phase-pill"><span id="phaseDot"></span><span id="phaseLabel">Training</span></div>
             </div>
 
             <div class="canvas-shell">
-              <canvas id="flowCanvas" aria-label="Animated robot rollouts following a planned path around circular obstacles"></canvas>
-              <div class="canvas-label canvas-label-source">A* demonstration</div>
-              <div class="canvas-label canvas-label-target">6.5% clearance</div>
+              <canvas id="flowCanvas" aria-label="Uniform free-space samples flowing onto the complete A-star trajectory inside a walled obstacle field"></canvas>
+              <div class="canvas-label canvas-label-source">Uniform free space → full path</div>
+              <div class="canvas-label canvas-label-target">Walled workspace</div>
               <button id="resampleButton" class="canvas-action" type="button" aria-label="Generate a new obstacle world" title="Generate a new obstacle world">
                 <span aria-hidden="true">↻</span> New world
               </button>
@@ -59,7 +59,7 @@
             <div class="timeline">
               <span class="time-label">t = <output id="timeOutput">0.00</output></span>
               <input id="timeSlider" type="range" min="0" max="1" value="0" step="0.05" aria-label="Transport time" />
-              <button id="flowToggle" class="icon-button" type="button" aria-label="Pause robot animation"><span aria-hidden="true">Ⅱ</span></button>
+              <button id="flowToggle" class="icon-button" type="button" aria-label="Pause flow animation"><span aria-hidden="true">Ⅱ</span></button>
             </div>
 
             <div class="solver-setting">
@@ -74,7 +74,7 @@
             </div>
 
             <div class="legend" aria-hidden="true">
-              <span><i class="dot dot-particle"></i>Learned rollout</span>
+              <span><i class="dot dot-particle"></i>Flow samples</span>
               <span><i class="line line-field"></i>A* reference</span>
               <span><i class="tile"></i>Clearance zone</span>
             </div>
@@ -93,7 +93,7 @@
               <div class="metric"><span>Step</span><strong id="stepMetric">0</strong></div>
               <div class="metric"><span>Loss</span><strong id="lossMetric">—</strong></div>
               <div class="metric"><span>Speed</span><strong><span id="speedMetric">—</span><small> step/s</small></strong></div>
-              <div class="metric metric-wide"><span>Collision-free goal arrivals</span><strong id="hitMetric">—</strong></div>
+              <div class="metric metric-wide"><span>Samples on path / trajectory coverage</span><strong id="hitMetric">—</strong></div>
             </div>
 
             <div class="loss-panel">
@@ -106,7 +106,10 @@
               <div class="summary-row"><span>Parameters</span><strong>5,442</strong></div>
               <div class="summary-row"><span>Optimizer</span><strong>Adam · 2e−3</strong></div>
               <div class="summary-row"><span>Batch size</span><strong>96</strong></div>
-              <div class="summary-row"><span>Expert</span><strong>Inflated-grid A*</strong></div>
+              <div class="summary-row"><span>Planner</span><strong>Inflated-grid A*</strong></div>
+              <div class="summary-row"><span>Source</span><strong>Uniform free space</strong></div>
+              <div class="summary-row"><span>Target</span><strong>Complete A* path</strong></div>
+              <div class="summary-row"><span>Pairing</span><strong>Minibatch OT</strong></div>
               <div class="summary-row"><span>Obstacles</span><strong id="obstacleSummary">—</strong></div>
               <div class="summary-row"><span>Route length</span><strong id="routeSummary">—</strong></div>
               <div class="summary-row"><span>Inference</span><strong id="inferenceSummary">20 Euler steps</strong></div>
@@ -115,7 +118,7 @@
             <div class="training-control">
               <div>
                 <span class="control-title">Training loop</span>
-                <span class="control-subtitle" id="trainingStatus">Learning the A* demonstration</span>
+                <span class="control-subtitle" id="trainingStatus">Matching uniform samples to the path</span>
               </div>
               <button id="trainingToggle" class="primary-button" type="button"><span aria-hidden="true">Ⅱ</span> Pause</button>
             </div>
@@ -125,29 +128,29 @@
         <section class="explanation" aria-labelledby="explanationTitle">
           <div class="explanation-heading">
             <p class="eyebrow">What you’re watching</p>
-            <h2 id="explanationTitle">Plan once. Learn a continuous controller.</h2>
+            <h2 id="explanationTitle">Plan a route. Learn its entire distribution.</h2>
           </div>
           <div class="steps">
             <article>
               <span class="step-number">01</span>
               <h3>Plan</h3>
-              <p>Inflate each obstacle by the robot’s safety margin, then run A* and shortcut only collision-free segments.</p>
+              <p>Enclose the workspace, spread obstacles through its interior, inflate them by the safety margin, and run A* through the remaining gaps.</p>
             </article>
             <article>
               <span class="step-number">02</span>
-              <h3>Demonstrate</h3>
-              <p>Sample time-indexed positions and velocities along the safe route, with small variations inside the start and goal regions.</p>
+              <h3>Pair</h3>
+              <p>Sample uniform free-space points and points all along the planned trajectory, then find a short minibatch optimal-transport pairing.</p>
             </article>
             <article>
               <span class="step-number">03</span>
-              <h3>Roll out</h3>
-              <p>Train the MLP to predict that velocity field, then integrate it with Euler steps from unseen starting points.</p>
+              <h3>Match</h3>
+              <p>Train the MLP on interpolated pairs, then integrate its velocity field so the whole uniform cloud settles onto the full route.</p>
             </article>
           </div>
           <div class="equation" aria-label="Flow matching training equations">
-            <span>x<sub>t</sub> = path(t) + offset(t)</span>
+            <span>x<sub>t</sub> = (1 − t)x<sub>uniform</sub> + tx<sub>path</sub></span>
             <i></i>
-            <span>v<sub>θ</sub>(x<sub>t</sub>, t) ≈ d path(t) / dt</span>
+            <span>v<sub>θ</sub>(x<sub>t</sub>, t) ≈ x<sub>path</sub> − x<sub>uniform</sub></span>
           </div>
         </section>
       </main>
