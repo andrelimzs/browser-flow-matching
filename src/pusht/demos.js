@@ -5,6 +5,10 @@
 // array without re-walking object graphs.
 
 const STORAGE_KEY = "pusht-demos-v1";
+// Version 2 fixes the task distribution to lower-left starts and upper-right
+// goals. Earlier demonstrations are valid simulator data but train a different
+// policy distribution, so they must not be mixed in silently.
+const VERSION = 2;
 
 // World coordinates live in [0, 1] and the pusher moves 0.017 per step, so four
 // decimals is far finer than the simulation can distinguish. Full float
@@ -18,7 +22,7 @@ function isWellFormed(episode) {
   if (!Array.isArray(episode.observations) || !Array.isArray(episode.actions)) return false;
   if (episode.observations.length !== episode.actions.length) return false;
   return episode.observations.every((row) => Array.isArray(row)) &&
-    episode.actions.every((row) => Array.isArray(row) && row.length >= 2);
+    episode.actions.every((row) => Array.isArray(row) && row.length === 3);
 }
 
 export class DemoStore {
@@ -30,7 +34,7 @@ export class DemoStore {
   begin(world, source) {
     this.current = {
       source,
-      // The observation width is 10 + 3 per obstacle, so episodes recorded at
+      // The observation width is 11 + 3 per obstacle, so episodes recorded at
       // different obstacle counts are not the same shape. Stamping it here lets
       // toDataset() group them instead of running them together.
       observationSize: world.observationSize(),
@@ -163,7 +167,7 @@ export class DemoStore {
   // hand is the one failure this page must not hide.
   persist() {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, episodes: this.episodes }));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: VERSION, episodes: this.episodes }));
       this.storageWarning = null;
       return null;
     } catch (error) {
@@ -184,7 +188,7 @@ export class DemoStore {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (!raw) return this;
       const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed?.episodes)) return this;
+      if (parsed?.version !== VERSION || !Array.isArray(parsed.episodes)) return this;
       this.episodes = parsed.episodes.filter(isWellFormed);
     } catch {
       this.episodes = [];
@@ -193,7 +197,7 @@ export class DemoStore {
   }
 
   download(filename = "pusht-demos.json") {
-    const payload = JSON.stringify({ version: 1, episodes: this.episodes });
+    const payload = JSON.stringify({ version: VERSION, episodes: this.episodes });
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

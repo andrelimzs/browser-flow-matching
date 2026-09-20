@@ -6,9 +6,10 @@
 // the demonstrations.
 
 const STORAGE_KEY = "pusht-policy-v1";
-// Version 2 changes xy chunks from positions relative to the initial pusher to
-// first-difference actions. Version 1 weights decode to a different policy.
-const VERSION = 2;
+// Version 2 changed xy chunks to first-difference actions. Version 3 fixes the
+// task distribution to lower-left starts and upper-right goals; earlier weights
+// are therefore not a valid cached policy for the current arena.
+const VERSION = 3;
 
 function toBase64(values) {
   const bytes = new Uint8Array(values.buffer, values.byteOffset, values.byteLength);

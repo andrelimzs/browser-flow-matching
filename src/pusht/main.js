@@ -12,8 +12,8 @@ const EPISODE_CAP = 2200;
 // simplest version of the task, but make every world/data path obey one value.
 const OBSTACLE_COUNT = 0;
 // A policy episode that is going nowhere should not grind to the full cap: the
-// expert solves in a median of 186 steps and a p90 of 246, so three times its
-// median is generous, and it ends a failure in seconds rather than a minute.
+// expert solves the fixed diagonal task in a median of 250 steps and a p90 of
+// 308, so 600 leaves ample room while ending a failure in seconds.
 const POLICY_EPISODE_CAP = 600;
 // Attempts allowed per collection slot before giving up on it. The expert
 // solves 92-100% depending on obstacle count, so six consecutive failures is

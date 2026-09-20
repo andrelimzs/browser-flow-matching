@@ -1,6 +1,13 @@
 // Sanity check: random pushing must stay finite, stay in bounds, and actually
 // move the block. Run with `node tools/sim-check.mjs`.
-import { PushWorld, createRandom, TEE, BLOCK_UNIT } from "../src/pusht/sim.js";
+import {
+  PushWorld,
+  createRandom,
+  TEE,
+  BLOCK_UNIT,
+  BLOCK_START_MAX,
+  GOAL_START_MIN,
+} from "../src/pusht/sim.js";
 
 const random = createRandom(7);
 const world = new PushWorld({ random, obstacleCount: 2 });
@@ -10,6 +17,7 @@ console.log("characteristic c^2", TEE.characteristicSquared.toFixed(6), "c", Mat
 
 let worst = { finite: true, minX: 1, maxX: 0, minY: 1, maxY: 0 };
 let moved = 0;
+let layoutsInRegions = true;
 const episodes = 200;
 const horizon = 200;
 const startTime = process.hrtime.bigint();
@@ -17,6 +25,9 @@ let steps = 0;
 
 for (let episode = 0; episode < episodes; episode++) {
   world.reset();
+  layoutsInRegions &&=
+    world.block.x <= BLOCK_START_MAX && world.block.y <= BLOCK_START_MAX &&
+    world.goal.x >= GOAL_START_MIN && world.goal.y >= GOAL_START_MIN;
   const startBlock = { ...world.block };
   for (let step = 0; step < horizon; step++) {
     // Random walk of the pusher target across the arena.
@@ -35,4 +46,6 @@ const elapsed = Number(process.hrtime.bigint() - startTime) / 1e9;
 console.log("finite:", worst.finite);
 console.log("block centre range x", worst.minX.toFixed(3), worst.maxX.toFixed(3), "y", worst.minY.toFixed(3), worst.maxY.toFixed(3));
 console.log("episodes where block moved >0.02:", moved, "/", episodes);
+console.log("all starts lower-left and goals upper-right:", layoutsInRegions);
 console.log("steps", steps, "in", elapsed.toFixed(3), "s =", Math.round(steps / elapsed), "steps/s");
+if (!layoutsInRegions) throw new Error("generated a layout outside the fixed start/goal regions");

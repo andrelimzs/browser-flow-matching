@@ -53,12 +53,11 @@ instead of sliding off it.
 - Pusher: position-controlled circle, radius `0.022`, capped at `0.017` world units per step
 - Block: 4u × 1u bar with a 1u × 3u stem, `u = 0.05`, area `0.0175`, `c² = 0.005366`
 - Action space: absolute pusher target position, matching the diffusion-policy Push-T convention
-- Observation: 10 values (pusher, block pose as cos/sin, goal pose) plus 3 per obstacle — 13 at the default
+- Observation: 11 values (pusher, block pose as cos/sin, goal pose, lift) plus 3 per obstacle — 11 currently
 - Success: 90% coverage of the goal footprint, by fixed-sample membership test
-- Obstacles are placed in the corridor between the start pose and the goal, stratified along it and kept
-  near its centre line, so they actually obstruct; scattering them over the arena mostly produced layouts
-  where nothing was in the way. The default is one, at a mean lateral offset of `0.020`. A corridor that
-  cannot take every obstacle yields the fullest layout found rather than an empty arena.
+- The block starts in the lower-left region and the goal in the upper-right; their orientations still vary.
+- The simulator supports obstacles in the corridor between start and goal, but the current UI fixes their
+  count at zero while the learned policy is brought up on the simpler task.
 
 Throughput is roughly 220k sim steps per second in Node. A ten-episode collection costs about 180 ms
 of blocking main-thread work (279 ms if every episode runs to the step cap) — a visible hitch, not a freeze.
@@ -84,15 +83,8 @@ the two cost within 1.25x of each other — see below. The committed side is lat
 passed; resampling it on every replan would make the block dither between the two routes and produce
 neither cleanly.
 
-Measured over held-out seeds, 150 episodes each, 2200-step horizon:
-
-| obstacles | 0 | 1 (default) | 2 | 3 | 4 |
-|---|---|---|---|---|---|
-| success | 100% | **89–90%** | 80% | 75% | 72% |
-
-Median successful episode is ~430 steps; the mean including failures is ~700, about six seconds on screen
-at 2x. Branching costs roughly four points of success, because it deliberately takes the longer route half
-the time. That is the price of the data being multimodal, not a defect to tune away.
+On the current zero-obstacle diagonal task, the expert solves 150/150 held-out
+episodes at a 2200-step horizon, with a median of 250 steps and p90 of 308.
 
 ## Multimodality
 

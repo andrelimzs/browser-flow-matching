@@ -28,6 +28,11 @@ export const PUSHER_RADIUS = 0.022;
 export const WALL_THICKNESS = 0.028;
 export const MAX_PUSHER_SPEED = 0.017;
 export const SUCCESS_COVERAGE = 0.9;
+// Keep the task distribution intentionally simple while the learned policy is
+// being brought up: the block always begins in the lower-left quadrant and the
+// goal always sits in the upper-right. Angles still vary over the full circle.
+export const BLOCK_START_MAX = 0.4;
+export const GOAL_START_MIN = 0.6;
 
 const SUBSTEPS = 4;
 const SOLVER_ITERATIONS = 6;
@@ -118,17 +123,20 @@ export class PushWorld {
     const bounds = insetBounds();
     const margin = TEE.radius + 0.01;
     const separation = minimumSeparation(count);
+    const safeMin = bounds.min + margin;
+    const safeMax = bounds.max - margin;
+    const sampleBetween = (minimum, maximum) => minimum + random() * (maximum - minimum);
 
     let best = null;
     for (let attempt = 0; attempt < 400; attempt++) {
       const goal = {
-        x: bounds.min + margin + random() * (bounds.max - bounds.min - margin * 2),
-        y: bounds.min + margin + random() * (bounds.max - bounds.min - margin * 2),
+        x: sampleBetween(GOAL_START_MIN, safeMax),
+        y: sampleBetween(GOAL_START_MIN, safeMax),
         angle: random() * Math.PI * 2,
       };
       const block = {
-        x: bounds.min + margin + random() * (bounds.max - bounds.min - margin * 2),
-        y: bounds.min + margin + random() * (bounds.max - bounds.min - margin * 2),
+        x: sampleBetween(safeMin, BLOCK_START_MAX),
+        y: sampleBetween(safeMin, BLOCK_START_MAX),
         angle: random() * Math.PI * 2,
       };
       if (Math.hypot(block.x - goal.x, block.y - goal.y) < separation) continue;
@@ -149,10 +157,10 @@ export class PushWorld {
 
     // Nothing at all was placeable: fall back to a bare, well-posed task.
     return this.commit({
-      goal: { x: 0.5, y: 0.72, angle: 0 },
-      block: { x: 0.5, y: 0.28, angle: Math.PI / 3 },
+      goal: { x: 0.72, y: 0.72, angle: 0 },
+      block: { x: 0.28, y: 0.28, angle: Math.PI / 3 },
       obstacles: [],
-      pusher: { x: 0.5, y: 0.12 },
+      pusher: { x: 0.14, y: 0.14 },
     });
   }
 
