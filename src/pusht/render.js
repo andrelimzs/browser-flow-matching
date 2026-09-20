@@ -128,6 +128,22 @@ export function createView(canvas) {
       const { lines, chosen, progress, executing } = options.flow;
       const converged = progress >= 1;
 
+      // A tick per Euler step, filled as the integration proceeds, so the ten
+      // steps are countable rather than a blur.
+      if (!executing) {
+        const total = options.flow.steps ?? 10;
+        const done = options.flow.step ?? 0;
+        const tick = Math.max(4, toLength(0.012));
+        const gap = tick * 0.5;
+        const width = total * tick + (total - 1) * gap;
+        const left = frame.offsetX + (frame.size - width) / 2;
+        const top = frame.offsetY + 10;
+        for (let index = 0; index < total; index++) {
+          context.fillStyle = index < done ? "rgba(29, 102, 219, .8)" : "rgba(25, 28, 27, .16)";
+          context.fillRect(left + index * (tick + gap), top, tick, 3);
+        }
+      }
+
       if (!converged) {
         // Mid-transport the samples are a cloud, not a path: drawing them as
         // points is honest about that, and the collapse from noise into

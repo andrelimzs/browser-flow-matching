@@ -132,6 +132,8 @@ button { color: inherit; }
 .metric-wide strong { font-size: 17px; }
 
 .footer-row { margin-top: 16px; margin-bottom: 0; }
+.footer-row-three { grid-template-columns: 1fr 1fr 1fr; }
+.text-button:disabled { opacity: .4; cursor: default; text-decoration: none; }
 .text-button { border: 0; background: transparent; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; padding: 4px 0; }
 .text-button:hover { color: var(--ink); }
 

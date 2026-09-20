@@ -164,6 +164,12 @@ Then the cycle repeats. Watching the spread is the point — it
 is the distribution the method exists to represent, which a regression policy
 could not show at all.
 
+A trained policy is cached in the browser alongside the demonstrations, so a
+reload does not mean retraining. Weights are stored as base64 of the raw
+Float32Array buffer -- 225 KB for 43k parameters, against roughly 850 KB written
+as decimal JSON, and they share a quota with the demos. Restoring reproduces
+sampled trajectories exactly. **Clear policy** discards it.
+
 Training runs in a Web Worker and streams weight snapshots back about 25 times
 over a run, so Policy mode is live from the first snapshot and the policy can be
 watched improving while it trains. The snapshot is a flat `Float32Array` handed

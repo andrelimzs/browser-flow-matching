@@ -5,6 +5,7 @@ import { DemoStore } from "./demos.js";
 import { createView } from "./render.js";
 import { makePolicy, createFlowSampler, ACTION_DIM, CHUNK } from "./policy.js";
 import { MLP } from "../flow/mlp.js";
+import { savePolicy, loadPolicy, clearPolicy } from "./policy-cache.js";
 
 const EPISODE_CAP = 2200;
 const TRAIL_LENGTH = 220;
@@ -15,11 +16,12 @@ const EXECUTE = 16;
 const LIFT_ON = 0.4;
 const LIFT_OFF = -0.4;
 // Candidate chunks drawn during the flow animation, and how many frames each
-// Euler step is held for. At 4 frames per step the sampling ran five times
-// longer than the motion it produced, which reads as a long wait followed by a
-// twitch; 2 frames puts the two phases at roughly equal screen time.
+// Euler step is held for. The integration is ten steps and watching it is the
+// point, so each one is held long enough to register: at 2 frames the whole
+// thing passed in a third of a second and read as a single blink.
 const FLOW_SAMPLES = 12;
-const FLOW_HOLD = 2;
+const FLOW_HOLD = 4;
+const EULER_STEPS = 10;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -141,7 +143,7 @@ function advanceFlow() {
   if (!state.sampler) {
     state.sampler = createFlowSampler(state.policy, world.writeObservation(), {
       count: FLOW_SAMPLES,
-      steps: 10,
+      steps: EULER_STEPS,
       random: Math.random,
       scales: state.policyScales,
     });
@@ -173,7 +175,14 @@ function captureFlow() {
   if (!sampler) { state.flow = null; return; }
   const lines = [];
   for (let index = 0; index < sampler.count; index++) lines.push(sampler.polyline(index));
-  state.flow = { lines, chosen: state.chosen, progress: sampler.step / sampler.steps, executing: false };
+  state.flow = {
+    lines,
+    chosen: state.chosen,
+    progress: sampler.step / sampler.steps,
+    step: sampler.step,
+    steps: sampler.steps,
+    executing: false,
+  };
 }
 
 function advance() {
@@ -261,7 +270,17 @@ function startTraining() {
     } else if (data.type === "done") {
       adoptWeights(data.weights);
       stopTraining();
-      setStatus(`Trained in ${(data.elapsed / 1000).toFixed(0)}s, final loss ${data.loss.toFixed(2)}.`);
+      // Cached so a reload does not mean retraining.
+      const warning = savePolicy({
+        weights: state.policy.model.snapshot(),
+        sizes: state.policy.model.sizes,
+        scales: state.policyScales,
+        observationSize: state.policy.observationSize,
+        obstacleCount: state.policyObstacles,
+        loss: data.loss,
+        steps: state.trainSteps,
+      });
+      setStatus(warning ?? `Trained in ${(data.elapsed / 1000).toFixed(0)}s, final loss ${data.loss.toFixed(2)} — cached for next time.`);
     } else if (data.type === "error") {
       stopTraining();
       setStatus(data.message);
@@ -307,6 +326,22 @@ function adoptWeights(weights) {
     $("#modePolicy").disabled = false;
     setStatus("Policy is live — switch to Policy mode to watch it improve as it trains.");
   }
+}
+
+// Brings back a policy cached by an earlier session, so Policy mode is usable
+// immediately on load.
+function restoreCachedPolicy() {
+  const cached = loadPolicy();
+  if (!cached) return;
+  preparePolicy(cached);
+  state.policyObstacles = cached.obstacleCount;
+  adoptWeights(cached.weights);
+  const age = cached.savedAt ? Math.round((Date.now() - cached.savedAt) / 60000) : null;
+  setStatus(
+    `Loaded a cached policy (${cached.steps?.toLocaleString() ?? "?"} steps, loss ${cached.loss?.toFixed(2) ?? "?"}` +
+    (age !== null && age < 6000 ? `, ${age < 1 ? "just now" : age + "m ago"}` : "") +
+    "). Switch to Policy to watch it.",
+  );
 }
 
 function drawLoss() {
@@ -365,6 +400,7 @@ function syncUI() {
   $("#collectButton").disabled = state.recording || state.mode !== "expert" || state.training;
   $("#clearButton").disabled = state.recording || state.training;
   $("#trainButton").disabled = state.training;
+  $("#clearPolicyButton").disabled = state.training || !state.policyReady;
   $("#stopTrainButton").disabled = !state.training;
   $("#recordButton").disabled = state.training || state.mode === "policy";
   $("#teleopHint").hidden = state.mode !== "teleop";
@@ -461,6 +497,18 @@ $("#exportButton").addEventListener("click", () => {
     return;
   }
   store.download();
+});
+
+$("#clearPolicyButton").addEventListener("click", () => {
+  clearPolicy();
+  state.policy = null;
+  state.policyReady = false;
+  state.sampler = null;
+  state.flow = null;
+  $("#modePolicy").disabled = true;
+  if (state.mode === "policy") setMode("expert");
+  setStatus("Cached policy cleared.");
+  syncUI();
 });
 
 $("#clearButton").addEventListener("click", () => {
@@ -578,5 +626,6 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener("resize", () => view.resize());
 
 state.episodeStart = world.snapshot();
+restoreCachedPolicy();
 syncUI();
 requestAnimationFrame(animate);
