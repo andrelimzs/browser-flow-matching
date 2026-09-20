@@ -8,6 +8,10 @@ import { MLP } from "../flow/mlp.js";
 import { savePolicy, loadPolicy, clearPolicy } from "./policy-cache.js";
 
 const EPISODE_CAP = 2200;
+// A policy episode that is going nowhere should not grind to the full cap: the
+// expert solves in a median of 186 steps and a p90 of 246, so three times its
+// median is generous, and it ends a failure in seconds rather than a minute.
+const POLICY_EPISODE_CAP = 600;
 const TRAIL_LENGTH = 220;
 const EXECUTE = 16;
 // The raw lift sign is wrong often enough that an isolated flip would send the
@@ -194,7 +198,8 @@ function advance() {
   state.trail.push([world.pusher.x, world.pusher.y]);
   if (state.trail.length > TRAIL_LENGTH) state.trail.shift();
 
-  if (world.coverage() >= SUCCESS_COVERAGE || world.steps >= EPISODE_CAP) {
+  const cap = state.mode === "policy" ? POLICY_EPISODE_CAP : EPISODE_CAP;
+  if (world.coverage() >= SUCCESS_COVERAGE || world.steps >= cap) {
     const solved = world.coverage() >= SUCCESS_COVERAGE;
     state.finished = solved ? "solved" : "timeout";
     state.running = false;
@@ -432,9 +437,7 @@ function animate() {
       // The pusher is held still for the whole flow animation, so what is on
       // screen is the sampling, not a blend of sampling and motion.
       if (!advanceFlow()) {
-        // One simulation step per frame regardless of the speed control, so the
-        // executed trajectory is actually watchable next to the sampling.
-        for (let index = 0; index < 1; index++) {
+        for (let index = 0; index < state.speed; index++) {
           if (state.chunkCursor >= EXECUTE) { state.sampler = null; state.chunk = null; break; }
           advance();
           if (state.finished) break;
