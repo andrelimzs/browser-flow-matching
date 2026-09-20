@@ -45,6 +45,10 @@ const ROUTE_COST_GATE = 1.25;
 const BARRIER_HALF_WIDTH = 0.019;
 const STUCK_LIMIT = 60;
 const SAMPLES_PER_UNIT = 90;
+// Emit short, acceleration-limited waypoints instead of discontinuously
+// jumping the command between distant contact targets. The simulator already
+// caps speed; bounding acceleration here also makes the demonstrations smooth.
+const MAX_TARGET_ACCELERATION = 0.0035;
 
 const probe = { depth: 0, nx: 0, ny: 0, px: 0, py: 0 };
 const scratch = { x: 0, y: 0 };
@@ -115,6 +119,8 @@ export class ScriptedExpert {
     this.approachSteps = 0;
     this.bestCoverage = 0;
     this.stalled = 0;
+    this.targetVelocityX = 0;
+    this.targetVelocityY = 0;
   }
 
   // Returns [x, y, lift] for this control step. Lifted, the pusher travels in a
@@ -138,13 +144,50 @@ export class ScriptedExpert {
         this.routeSide = 0;
         this.routeSides.clear();
       }
+      this.targetVelocityX = 0;
+      this.targetVelocityY = 0;
       return [world.pusher.x, world.pusher.y, 0];
     }
     this.stuck = 0;
 
     const target = this.state === "push" ? this.pushTarget(world) : this.approachTarget(world);
     this.advance(world, coverage);
-    return target;
+    return this.smoothTarget(world, target);
+  }
+
+  smoothTarget(world, target) {
+    const dx = target[0] - world.pusher.x;
+    const dy = target[1] - world.pusher.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 1e-9) {
+      this.targetVelocityX = 0;
+      this.targetVelocityY = 0;
+      return [world.pusher.x, world.pusher.y, target[2]];
+    }
+
+    // Slow early enough to arrive without an abrupt final step. This is the
+    // usual stopping-speed bound v <= sqrt(2ad), paired with a vector-valued
+    // acceleration limit for smooth turns between contacts.
+    const speed = Math.min(MAX_PUSHER_SPEED, Math.sqrt(2 * MAX_TARGET_ACCELERATION * distance));
+    const desiredX = (dx / distance) * speed;
+    const desiredY = (dy / distance) * speed;
+    const changeX = desiredX - this.targetVelocityX;
+    const changeY = desiredY - this.targetVelocityY;
+    const change = Math.hypot(changeX, changeY);
+    const scale = change > MAX_TARGET_ACCELERATION ? MAX_TARGET_ACCELERATION / change : 1;
+    this.targetVelocityX += changeX * scale;
+    this.targetVelocityY += changeY * scale;
+
+    const step = Math.hypot(this.targetVelocityX, this.targetVelocityY);
+    if (step > distance) {
+      this.targetVelocityX = dx;
+      this.targetVelocityY = dy;
+    }
+    return [
+      world.pusher.x + this.targetVelocityX,
+      world.pusher.y + this.targetVelocityY,
+      target[2],
+    ];
   }
 
   // Keeps a planned route for the block's centroid current. Replanning is cheap

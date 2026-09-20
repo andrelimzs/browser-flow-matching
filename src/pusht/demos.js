@@ -5,10 +5,10 @@
 // array without re-walking object graphs.
 
 const STORAGE_KEY = "pusht-demos-v1";
-// Version 2 fixes the task distribution to lower-left starts and upper-right
-// goals. Earlier demonstrations are valid simulator data but train a different
-// policy distribution, so they must not be mixed in silently.
-const VERSION = 2;
+// Version 2 fixed the task distribution; version 3 switches the expert from
+// distant, discontinuous targets to acceleration-limited waypoints. Mixing the
+// old commands back in would undo the smoother policy target distribution.
+const VERSION = 3;
 
 // World coordinates live in [0, 1] and the pusher moves 0.017 per step, so four
 // decimals is far finer than the simulation can distinguish. Full float
