@@ -111,7 +111,7 @@
               <div class="summary-row"><span>Parameters</span><strong>5,634</strong></div>
               <div class="summary-row"><span>Optimizer</span><strong>Adam · 2e−3</strong></div>
               <div class="summary-row"><span>Batch size</span><strong>96</strong></div>
-              <div class="summary-row"><span>Planner</span><strong>Inflated-grid A*</strong></div>
+              <div class="summary-row"><span>Planner</span><strong>Barrier-cost A*</strong></div>
               <div class="summary-row"><span>Source</span><strong>Uniform free space</strong></div>
               <div class="summary-row"><span>Target</span><strong>Complete A* path</strong></div>
               <div class="summary-row"><span>Conditioning</span><strong id="conditioningSummary">Flow τ only</strong></div>
@@ -140,7 +140,7 @@
             <article>
               <span class="step-number">01</span>
               <h3>Plan</h3>
-              <p>Enclose the workspace, spread obstacles through its interior, inflate them by the safety margin, and run A* through the remaining gaps.</p>
+              <p>Enclose the workspace, keep the safety boundary infeasible, and give A* a logarithmic barrier cost that rises near obstacles and walls.</p>
             </article>
             <article>
               <span class="step-number">02</span>

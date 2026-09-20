@@ -14,7 +14,7 @@ Open `http://localhost:5173`.
 ## How it works
 
 - World: fixed bottom-left and top-right route endpoints, a perimeter wall, and exactly 3 widely spaced circular obstacles
-- Planner: 8-connected A* on an obstacle-inflated grid, followed by collision-checked path shortcutting
+- Planner: 8-connected A* with a logarithmic clearance barrier around obstacles and walls, followed by barrier-aware path shortcutting; the centerline reserves the target ribbon’s width beyond the displayed safety envelope
 - Source distribution: uniform samples over collision-free workspace positions
 - Target distribution: the ordered curve `p(s) = (x(s), y(s))`, with `s` sampled uniformly along the complete A* route
 - Coupling: independent free-space/path samples by default; optional progress mode ranks sources from start-nearest to goal-nearest and couples them to increasing `s`

@@ -12,10 +12,12 @@ const GOAL = [0.84, 0.84];
 const REGION_RADIUS = 0.055;
 const ROBOT_RADIUS = 0.014;
 const CLEARANCE = 0.065;
-const PLAN_CLEARANCE = 0.088;
+const PATH_WIDTH = 0.006;
+const PLAN_CLEARANCE = CLEARANCE + PATH_WIDTH;
+const BARRIER_INFLUENCE = 0.12;
+const BARRIER_STRENGTH = 0.7;
 const WALL_THICKNESS = 0.04;
 const OBSTACLE_GAP = 0.075;
-const PATH_WIDTH = 0.006;
 
 const $ = (selector) => document.querySelector(selector);
 const flowCanvas = $("#flowCanvas");
@@ -98,10 +100,24 @@ class MinHeap {
   }
 }
 
-function blockedAt(x, y, obstacles, padding = PLAN_CLEARANCE) {
+function safetySlackAt(x, y, obstacles, padding = CLEARANCE) {
   const boundary = WALL_THICKNESS + ROBOT_RADIUS + padding;
-  if (x < boundary || x > 1 - boundary || y < boundary || y > 1 - boundary) return true;
-  return obstacles.some((obstacle) => Math.hypot(x - obstacle.x, y - obstacle.y) <= obstacle.r + ROBOT_RADIUS + padding);
+  let slack = Math.min(x - boundary, 1 - boundary - x, y - boundary, 1 - boundary - y);
+  for (const obstacle of obstacles) {
+    slack = Math.min(slack, Math.hypot(x - obstacle.x, y - obstacle.y) - obstacle.r - ROBOT_RADIUS - padding);
+  }
+  return slack;
+}
+
+function clearanceBarrierAt(x, y, obstacles) {
+  const slack = safetySlackAt(x, y, obstacles, PLAN_CLEARANCE);
+  if (slack <= 0) return Infinity;
+  if (slack >= BARRIER_INFLUENCE) return 0;
+  return BARRIER_STRENGTH * -Math.log(slack / BARRIER_INFLUENCE);
+}
+
+function blockedAt(x, y, obstacles, padding = PLAN_CLEARANCE) {
+  return safetySlackAt(x, y, obstacles, padding) <= 0;
 }
 
 function segmentIsClear(start, end, obstacles, padding = PLAN_CLEARANCE) {
@@ -109,6 +125,36 @@ function segmentIsClear(start, end, obstacles, padding = PLAN_CLEARANCE) {
   if (start[0] < boundary || start[0] > 1 - boundary || start[1] < boundary || start[1] > 1 - boundary) return false;
   if (end[0] < boundary || end[0] > 1 - boundary || end[1] < boundary || end[1] > 1 - boundary) return false;
   return obstacles.every((obstacle) => pointSegmentDistance([obstacle.x, obstacle.y], start, end) > obstacle.r + ROBOT_RADIUS + padding);
+}
+
+function segmentTraversalCost(start, end, obstacles) {
+  const length = distance(start, end);
+  const samples = Math.max(2, Math.ceil(length * GRID_SIZE * 2));
+  let multiplier = 0;
+  for (let index = 0; index <= samples; index++) {
+    const amount = index / samples;
+    const x = start[0] * (1 - amount) + end[0] * amount;
+    const y = start[1] * (1 - amount) + end[1] * amount;
+    const barrier = clearanceBarrierAt(x, y, obstacles);
+    if (!Number.isFinite(barrier)) return Infinity;
+    multiplier += 1 + barrier;
+  }
+  return length * multiplier / (samples + 1);
+}
+
+function pathTraversalCost(path, obstacles, start = 0, end = path.length - 1) {
+  let cost = 0;
+  for (let index = start + 1; index <= end; index++) {
+    cost += segmentTraversalCost(path[index - 1], path[index], obstacles);
+  }
+  return cost;
+}
+
+function pathIsClear(path, obstacles, padding = PLAN_CLEARANCE) {
+  for (let index = 1; index < path.length; index++) {
+    if (!segmentIsClear(path[index - 1], path[index], obstacles, padding)) return false;
+  }
+  return true;
 }
 
 function planGridPath(obstacles) {
@@ -152,6 +198,7 @@ function planGridPath(obstacles) {
     closed[current] = 1;
     const currentX = current % size;
     const currentY = Math.floor(current / size);
+    const currentPoint = toPoint(currentX, currentY);
     for (const [dx, dy, moveCost] of neighbors) {
       const nextX = currentX + dx;
       const nextY = currentY + dy;
@@ -159,7 +206,11 @@ function planGridPath(obstacles) {
       const next = toIndex(nextX, nextY);
       if (blocked[next] || closed[next]) continue;
       if (dx !== 0 && dy !== 0 && (blocked[toIndex(currentX + dx, currentY)] || blocked[toIndex(currentX, currentY + dy)])) continue;
-      const nextCost = costs[current] + moveCost;
+      const point = toPoint(nextX, nextY);
+      if (!segmentIsClear(currentPoint, point, obstacles)) continue;
+      const barrier = clearanceBarrierAt(point[0], point[1], obstacles);
+      if (!Number.isFinite(barrier)) continue;
+      const nextCost = costs[current] + moveCost * (1 + barrier);
       if (nextCost >= costs[next]) continue;
       costs[next] = nextCost;
       previous[next] = current;
@@ -187,7 +238,9 @@ function shortcutPath(path, obstacles) {
   while (anchor < path.length - 1) {
     let next = anchor + 1;
     for (let candidate = path.length - 1; candidate > anchor + 1; candidate--) {
-      if (segmentIsClear(path[anchor], path[candidate], obstacles)) {
+      const directCost = segmentTraversalCost(path[anchor], path[candidate], obstacles);
+      const replacedCost = pathTraversalCost(path, obstacles, anchor, candidate);
+      if (segmentIsClear(path[anchor], path[candidate], obstacles) && Number.isFinite(directCost) && directCost <= replacedCost * 1.02) {
         next = candidate;
         break;
       }
@@ -217,16 +270,17 @@ function chaikinPath(path, iterations) {
 }
 
 function smoothSafePath(path, obstacles) {
+  const originalCost = pathTraversalCost(path, obstacles);
   for (let iterations = 3; iterations >= 1; iterations--) {
     const candidate = chaikinPath(path, iterations);
     let safe = true;
     for (let i = 1; i < candidate.length; i++) {
-      if (!segmentIsClear(candidate[i - 1], candidate[i], obstacles, CLEARANCE)) {
+      if (!segmentIsClear(candidate[i - 1], candidate[i], obstacles)) {
         safe = false;
         break;
       }
     }
-    if (safe) return candidate;
+    if (safe && pathTraversalCost(candidate, obstacles) <= originalCost * 1.04) return candidate;
   }
   return path;
 }
@@ -310,7 +364,8 @@ function generateWorld() {
     const shortened = shortcutPath(gridPath, obstacles);
     const smoothed = smoothSafePath(shortened, obstacles);
     const route = resamplePath(smoothed, PATH_SAMPLES);
-    const nearbyObstacles = obstacles.filter((obstacle) => distanceToPath([obstacle.x, obstacle.y], route.samples) < obstacle.r + ROBOT_RADIUS + PLAN_CLEARANCE + 0.045).length;
+    if (!pathIsClear(route.samples, obstacles)) continue;
+    const nearbyObstacles = obstacles.filter((obstacle) => distanceToPath([obstacle.x, obstacle.y], route.samples) < obstacle.r + ROBOT_RADIUS + CLEARANCE + BARRIER_INFLUENCE).length;
     if (route.length < distance(START, GOAL) * 1.035 || route.length > 1.3 || nearbyObstacles < 2) continue;
     return { obstacles, path: route.samples, length: route.length, waypoints: shortened.length };
   }
@@ -350,8 +405,12 @@ function samplePathPoint(progress) {
   const tangentX = after[0] - before[0];
   const tangentY = after[1] - before[1];
   const tangentLength = Math.max(1e-6, Math.hypot(tangentX, tangentY));
-  const offset = (random() * 2 - 1) * PATH_WIDTH;
-  return [point[0] - (tangentY / tangentLength) * offset, point[1] + (tangentX / tangentLength) * offset];
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const offset = (random() * 2 - 1) * PATH_WIDTH;
+    const candidate = [point[0] - (tangentY / tangentLength) * offset, point[1] + (tangentX / tangentLength) * offset];
+    if (!blockedAt(candidate[0], candidate[1], obstacles, CLEARANCE)) return candidate;
+  }
+  return point;
 }
 
 function xavier(size, fanIn, fanOut) {
