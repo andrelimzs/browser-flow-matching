@@ -17,7 +17,6 @@ const PLAN_CLEARANCE = CLEARANCE + PATH_WIDTH;
 const BARRIER_INFLUENCE = 0.12;
 const BARRIER_STRENGTH = 0.7;
 const WALL_THICKNESS = 0.04;
-const OBSTACLE_GAP = 0.075;
 
 const $ = (selector) => document.querySelector(selector);
 const flowCanvas = $("#flowCanvas");
@@ -305,14 +304,6 @@ function resamplePath(path, count) {
   return { samples, length: totalLength };
 }
 
-function distanceToPath(point, path = referencePath) {
-  let minimum = Infinity;
-  for (let i = 1; i < path.length; i++) {
-    minimum = Math.min(minimum, pointSegmentDistance(point, path[i - 1], path[i]));
-  }
-  return minimum;
-}
-
 function nearestPathProgress(point) {
   let bestDistance = Infinity;
   let bestProgress = 0;
@@ -337,30 +328,52 @@ function nearestPathProgress(point) {
 
 function makeRandomObstacles(count) {
   const density = (count - 2) / 8;
-  const minimumRadius = 0.048 - density * 0.018;
-  const maximumRadius = 0.07 - density * 0.025;
-  const minimumGap = OBSTACLE_GAP - density * 0.035;
+  const minimumRadius = 0.042 - density * 0.026;
+  const maximumRadius = 0.06 - density * 0.035;
+  const minimumGap = 0.055 - density * 0.03;
   let best = [];
-  for (let restart = 0; restart < 5; restart++) {
+  for (let restart = 0; restart < 20; restart++) {
     const obstacles = [];
-    let attempts = 0;
-    while (obstacles.length < count && attempts < 1800) {
-      attempts++;
-      const progress = 0.18 + random() * 0.64;
-      const lateral = (random() - 0.5) * 0.54;
-      const obstacle = {
-        x: progress + lateral,
-        y: progress - lateral,
-        r: minimumRadius + random() * (maximumRadius - minimumRadius),
-      };
-      const edge = WALL_THICKNESS + ROBOT_RADIUS + obstacle.r + 0.008;
-      if (obstacle.x < edge || obstacle.x > 1 - edge || obstacle.y < edge || obstacle.y > 1 - edge) continue;
-      if (distance([obstacle.x, obstacle.y], START) < obstacle.r + CLEARANCE + REGION_RADIUS) continue;
-      if (distance([obstacle.x, obstacle.y], GOAL) < obstacle.r + CLEARANCE + REGION_RADIUS) continue;
-      if (obstacles.some((other) => distance([obstacle.x, obstacle.y], [other.x, other.y]) < obstacle.r + other.r + minimumGap)) continue;
-      const candidate = [...obstacles, obstacle];
-      if (!planGridPath(candidate)) continue;
-      obstacles.push(obstacle);
+    let currentPath = planGridPath(obstacles);
+    while (obstacles.length < count && currentPath) {
+      const pathSamples = resamplePath(currentPath, 128).samples;
+      const candidates = [];
+      for (let trial = 0; trial < 24; trial++) {
+        const progress = 0.12 + ((trial + random()) / 24) * 0.76;
+        const pathIndex = Math.min(pathSamples.length - 1, Math.floor(progress * (pathSamples.length - 1)));
+        const point = pathSamples[pathIndex];
+        const obstacle = {
+          x: point[0],
+          y: point[1],
+          r: minimumRadius + random() * (maximumRadius - minimumRadius),
+        };
+        const edge = WALL_THICKNESS + ROBOT_RADIUS + obstacle.r + 0.004;
+        if (obstacle.x < edge || obstacle.x > 1 - edge || obstacle.y < edge || obstacle.y > 1 - edge) continue;
+        if (distance([obstacle.x, obstacle.y], START) < obstacle.r + CLEARANCE + REGION_RADIUS * 0.75) continue;
+        if (distance([obstacle.x, obstacle.y], GOAL) < obstacle.r + CLEARANCE + REGION_RADIUS * 0.75) continue;
+        let separation = obstacles.length === 0
+          ? Math.min(distance([obstacle.x, obstacle.y], START), distance([obstacle.x, obstacle.y], GOAL))
+          : Infinity;
+        let spaced = true;
+        for (const other of obstacles) {
+          const gap = distance([obstacle.x, obstacle.y], [other.x, other.y]) - obstacle.r - other.r;
+          if (gap < minimumGap) {
+            spaced = false;
+            break;
+          }
+          separation = Math.min(separation, gap);
+        }
+        if (!spaced) continue;
+        const nextPath = planGridPath([...obstacles, obstacle]);
+        if (!nextPath) continue;
+        const nextLength = resamplePath(nextPath, 64).length;
+        candidates.push({ obstacle, nextPath, score: separation * 0.25 - nextLength + random() * 0.001 });
+      }
+      candidates.sort((a, b) => b.score - a.score);
+      const choice = candidates[0];
+      if (!choice) break;
+      obstacles.push(choice.obstacle);
+      currentPath = choice.nextPath;
     }
     if (obstacles.length > best.length) best = obstacles;
     if (obstacles.length === count) return obstacles;
@@ -369,7 +382,7 @@ function makeRandomObstacles(count) {
 }
 
 function generateWorld(count) {
-  for (let attempt = 0; attempt < 120; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     const obstacles = makeRandomObstacles(count);
     if (obstacles.length < count) continue;
     const gridPath = planGridPath(obstacles);
@@ -378,9 +391,6 @@ function generateWorld(count) {
     const smoothed = smoothSafePath(shortened, obstacles);
     const route = resamplePath(smoothed, PATH_SAMPLES);
     if (!pathIsClear(route.samples, obstacles)) continue;
-    const nearbyObstacles = obstacles.filter((obstacle) => distanceToPath([obstacle.x, obstacle.y], route.samples) < obstacle.r + ROBOT_RADIUS + CLEARANCE + BARRIER_INFLUENCE).length;
-    const maximumRouteLength = 1.3 + Math.max(0, count - 3) * 0.025;
-    if (route.length < distance(START, GOAL) * 1.035 || route.length > maximumRouteLength || nearbyObstacles < Math.min(2, count)) continue;
     return { obstacles, path: route.samples, length: route.length, waypoints: shortened.length };
   }
   const obstacles = makeRandomObstacles(count);

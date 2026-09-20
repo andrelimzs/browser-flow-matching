@@ -13,7 +13,7 @@ Open `http://localhost:5173`.
 
 ## How it works
 
-- World: fixed bottom-left and top-right route endpoints, a perimeter wall, and a configurable 2–10 circular obstacles
+- World: fixed bottom-left and top-right route endpoints, a perimeter wall, and 2–10 obstacles placed sequentially by solving a path, blocking it, and confirming a replacement path remains feasible
 - Planner: 8-connected A* with a logarithmic clearance barrier around obstacles and walls, followed by barrier-aware path shortcutting; the centerline reserves the target ribbon’s width beyond the displayed safety envelope
 - Source distribution: uniform samples over collision-free workspace positions
 - Target distribution: the ordered curve `p(s) = (x(s), y(s))`, with `s` sampled uniformly along the complete A* route
