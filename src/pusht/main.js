@@ -37,6 +37,7 @@ const state = {
   policy: null,
   policyScales: null,
   policyObstacles: 0,
+  policyReady: false,
   chunk: null,
   chunkCursor: Infinity,
   lift: 0,
@@ -108,7 +109,7 @@ function nextAction() {
 
 // Action chunking: sample a chunk, execute part of it open loop, resample.
 function policyAction() {
-  if (!state.policy || world.obstacles.length !== state.policyObstacles) {
+  if (!state.policyReady || world.obstacles.length !== state.policyObstacles) {
     return [world.pusher.x, world.pusher.y, 0];
   }
   if (state.chunkCursor >= EXECUTE || !state.chunk) {
@@ -196,7 +197,11 @@ function startTraining() {
   worker.onmessage = (event) => {
     const data = event.data;
     if (data.type === "started") {
+      // Build the policy up front so the first weight snapshot can go straight in.
+      preparePolicy(data);
       $("#trainStatus").textContent = `${data.episodes} episodes · ${data.transitions.toLocaleString()} transitions · ${data.params.toLocaleString()} params`;
+    } else if (data.type === "weights") {
+      adoptWeights(data.weights);
     } else if (data.type === "progress") {
       state.lossHistory.push(data.loss);
       const share = data.step / data.steps;
@@ -206,9 +211,9 @@ function startTraining() {
         (remaining ? ` · ~${Math.ceil(remaining)}s left` : "");
       drawLoss();
     } else if (data.type === "done") {
-      adoptPolicy(data);
+      adoptWeights(data.weights);
       stopTraining();
-      setStatus(`Trained in ${(data.elapsed / 1000).toFixed(0)}s, final loss ${data.loss.toFixed(2)}. Switch to Policy to watch it.`);
+      setStatus(`Trained in ${(data.elapsed / 1000).toFixed(0)}s, final loss ${data.loss.toFixed(2)}.`);
     } else if (data.type === "error") {
       stopTraining();
       setStatus(data.message);
@@ -226,16 +231,32 @@ function stopTraining() {
   syncUI();
 }
 
-function adoptPolicy({ model, scales, observationSize }) {
+// Builds an inference-sized copy of the network the worker is training, ready
+// to receive weight snapshots.
+function preparePolicy({ observationSize, sizes, scales }) {
   const policy = makePolicy({ observationSize, width: 128, maxBatch: 1, random: Math.random });
-  policy.model = new MLP({ sizes: model.sizes, maxBatch: 1, random: Math.random }).loadJSON(model);
+  policy.model = new MLP({ sizes, maxBatch: 1, random: Math.random });
   state.policy = policy;
   state.policyScales = Float32Array.from(scales);
   // The observation width is 11 + 3 per obstacle, so a policy is tied to the
   // obstacle count it trained on. Switching the slider afterwards would feed it
   // the wrong shape, so the count is recorded and restored with the mode.
   state.policyObstacles = world.obstacles.length;
-  $("#modePolicy").disabled = false;
+  state.policyReady = false;
+}
+
+// Snapshots arrive throughout training, so Policy mode can be watched while it
+// is still learning. Writing into the existing buffers allocates nothing, and
+// the main thread is single-threaded, so a sample can never read a half-written
+// network.
+function adoptWeights(weights) {
+  if (!state.policy) return;
+  state.policy.model.loadSnapshot(weights);
+  if (!state.policyReady) {
+    state.policyReady = true;
+    $("#modePolicy").disabled = false;
+    setStatus("Policy is live — switch to Policy mode to watch it improve as it trains.");
+  }
 }
 
 function drawLoss() {
@@ -276,7 +297,9 @@ function syncUI() {
   $("#coverageLabel").textContent = `coverage ${(coverage * 100).toFixed(0)}%`;
   $("#stepsMetric").textContent = String(world.steps);
   $("#stateMetric").textContent =
-    state.mode === "teleop" ? "teleop" : state.mode === "policy" ? (state.policy ? "flow policy" : "untrained") : expert.describe();
+    state.mode === "teleop" ? "teleop"
+      : state.mode === "policy" ? (state.training ? "flow policy (training)" : "flow policy")
+      : expert.describe();
   $("#demoMetric").textContent = `${stats.total}`;
   $("#successMetric").textContent = stats.total ? `${(stats.successRate * 100).toFixed(0)}%` : "—";
   $("#transitionMetric").textContent = stats.steps.toLocaleString();
@@ -405,7 +428,7 @@ for (const button of document.querySelectorAll("[data-tie]")) {
 
 function setMode(mode) {
   if (mode === "policy") {
-    if (!state.policy) return;
+    if (!state.policyReady) return;
     // Restore the layout the policy was trained for.
     const range = $("#obstacleRange");
     if (Number(range.value) !== state.policyObstacles) {
@@ -424,7 +447,7 @@ function setMode(mode) {
 
 $("#modeExpert").addEventListener("click", () => setMode("expert"));
 $("#modeTeleop").addEventListener("click", () => setMode("teleop"));
-$("#modePolicy").addEventListener("click", () => { if (state.policy) setMode("policy"); });
+$("#modePolicy").addEventListener("click", () => { if (state.policyReady) setMode("policy"); });
 
 $("#trainButton").addEventListener("click", startTraining);
 $("#stopTrainButton").addEventListener("click", () => {

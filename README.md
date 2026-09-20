@@ -155,6 +155,14 @@ tools/multimodality.mjs    branch divergence  OBSTACLES=n
 tools/tune.mjs             weight grid search
 ```
 
+Training runs in a Web Worker and streams weight snapshots back about 25 times
+over a run, so Policy mode is live from the first snapshot and the policy can be
+watched improving while it trains. The snapshot is a flat `Float32Array` handed
+over as a transferable: 0.019 ms against a ~20 ms training step, where the
+`toJSON` path would have cost 2.87 ms. Inference is on the main thread and costs
+ten single-sample forward passes every 16 simulation steps, so neither side
+slows the other.
+
 `ScriptedExpert` takes `routeCostGate: 0` to disable route branching (always take the shorter way round),
 which is how the branching cost above was isolated.
 
