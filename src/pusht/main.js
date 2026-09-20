@@ -3,9 +3,17 @@ import { PushWorld, createRandom, SUCCESS_COVERAGE } from "./sim.js";
 import { ScriptedExpert } from "./expert.js";
 import { DemoStore } from "./demos.js";
 import { createView } from "./render.js";
+import { makePolicy, sampleChunk, ACTION_DIM, CHUNK } from "./policy.js";
+import { MLP } from "../flow/mlp.js";
 
 const EPISODE_CAP = 2200;
 const TRAIL_LENGTH = 220;
+const EXECUTE = 16;
+// The raw lift sign is wrong often enough that an isolated flip would send the
+// pusher through the block instead of into it; switching only on a confident
+// value and holding otherwise turns those into no-ops.
+const LIFT_ON = 0.4;
+const LIFT_OFF = -0.4;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -21,11 +29,23 @@ const state = {
   recording: false,
   speed: 2,
   pointer: null,
+  lifted: false,
   trail: [],
   lastAction: null,
   finished: null,
   episodeStart: null,
+  policy: null,
+  policyScales: null,
+  policyObstacles: 0,
+  chunk: null,
+  chunkCursor: Infinity,
+  lift: 0,
+  trainSteps: 4000,
+  training: false,
+  lossHistory: [],
 };
+
+let worker = null;
 
 // Reset replays the current layout so a hard episode can be retried; New world
 // draws a fresh one. Both clear any part-recorded demonstration.
@@ -42,6 +62,9 @@ function resetEpisode({ newWorld = false } = {}) {
   state.trail = [];
   state.lastAction = null;
   state.finished = null;
+  state.chunk = null;
+  state.chunkCursor = Infinity;
+  state.lift = 0;
   syncUI();
 }
 
@@ -75,18 +98,41 @@ function reportStorage(fallback) {
 function nextAction() {
   if (state.mode === "teleop") {
     // Hold position when the cursor leaves the arena, so the block is not
-    // yanked by a stray pointer event.
-    return state.pointer ?? [world.pusher.x, world.pusher.y];
+    // yanked by a stray pointer event. Held pointer button lifts the pusher.
+    const target = state.pointer ?? [world.pusher.x, world.pusher.y];
+    return [target[0], target[1], state.lifted ? 1 : 0];
   }
+  if (state.mode === "policy") return policyAction();
   return expert.act(world);
+}
+
+// Action chunking: sample a chunk, execute part of it open loop, resample.
+function policyAction() {
+  if (!state.policy || world.obstacles.length !== state.policyObstacles) {
+    return [world.pusher.x, world.pusher.y, 0];
+  }
+  if (state.chunkCursor >= EXECUTE || !state.chunk) {
+    state.chunk = sampleChunk(state.policy, world.writeObservation(), {
+      steps: 10,
+      random: Math.random,
+      scales: state.policyScales,
+    });
+    state.chunkCursor = 0;
+  }
+  const base = state.chunkCursor * ACTION_DIM;
+  const raw = state.chunk[base + 2];
+  if (raw > LIFT_ON) state.lift = 1;
+  else if (raw < LIFT_OFF) state.lift = 0;
+  state.chunkCursor += 1;
+  return [state.chunk[base], state.chunk[base + 1], state.lift];
 }
 
 function advance() {
   if (state.finished) return;
-  const [actionX, actionY] = nextAction();
-  if (state.recording) store.record(world.writeObservation(), actionX, actionY);
-  world.step(actionX, actionY);
-  state.lastAction = [actionX, actionY];
+  const [actionX, actionY, lift] = nextAction();
+  if (state.recording) store.record(world.writeObservation(), actionX, actionY, lift);
+  world.step(actionX, actionY, lift);
+  state.lastAction = [actionX, actionY, lift];
   state.trail.push([world.pusher.x, world.pusher.y]);
   if (state.trail.length > TRAIL_LENGTH) state.trail.shift();
 
@@ -118,9 +164,9 @@ function collect(count) {
     for (let step = 0; step < EPISODE_CAP; step++) {
       if (world.coverage() >= SUCCESS_COVERAGE) break;
       const observation = world.writeObservation();
-      const [actionX, actionY] = collector.act(world);
-      store.record(observation, actionX, actionY);
-      world.step(actionX, actionY);
+      const [actionX, actionY, lift] = collector.act(world);
+      store.record(observation, actionX, actionY, lift);
+      world.step(actionX, actionY, lift);
     }
     if (store.end(world, { keep: true })) kept += 1;
   }
@@ -135,6 +181,89 @@ function collect(count) {
   syncUI();
 }
 
+function startTraining() {
+  const solved = store.episodes.filter((episode) => episode.success !== false);
+  if (solved.length < 3) {
+    setStatus("Collect some demonstrations first — the policy trains on solved episodes.");
+    return;
+  }
+  state.training = true;
+  state.lossHistory = [];
+  state.running = false;
+  $("#trainProgress").hidden = false;
+
+  worker = new Worker(new URL("./trainer.worker.js", import.meta.url), { type: "module" });
+  worker.onmessage = (event) => {
+    const data = event.data;
+    if (data.type === "started") {
+      $("#trainStatus").textContent = `${data.episodes} episodes · ${data.transitions.toLocaleString()} transitions · ${data.params.toLocaleString()} params`;
+    } else if (data.type === "progress") {
+      state.lossHistory.push(data.loss);
+      const share = data.step / data.steps;
+      const remaining = share > 0.02 ? (data.elapsed / share - data.elapsed) / 1000 : null;
+      $("#trainStatus").textContent =
+        `step ${data.step.toLocaleString()} / ${data.steps.toLocaleString()} · loss ${data.loss.toFixed(2)}` +
+        (remaining ? ` · ~${Math.ceil(remaining)}s left` : "");
+      drawLoss();
+    } else if (data.type === "done") {
+      adoptPolicy(data);
+      stopTraining();
+      setStatus(`Trained in ${(data.elapsed / 1000).toFixed(0)}s, final loss ${data.loss.toFixed(2)}. Switch to Policy to watch it.`);
+    } else if (data.type === "error") {
+      stopTraining();
+      setStatus(data.message);
+    }
+  };
+  worker.postMessage({ episodes: solved, steps: state.trainSteps, width: 128, learningRate: 0.002 });
+  setStatus("Training in a background worker — the page stays interactive.");
+  syncUI();
+}
+
+function stopTraining() {
+  if (worker) worker.terminate();
+  worker = null;
+  state.training = false;
+  syncUI();
+}
+
+function adoptPolicy({ model, scales, observationSize }) {
+  const policy = makePolicy({ observationSize, width: 128, maxBatch: 1, random: Math.random });
+  policy.model = new MLP({ sizes: model.sizes, maxBatch: 1, random: Math.random }).loadJSON(model);
+  state.policy = policy;
+  state.policyScales = Float32Array.from(scales);
+  // The observation width is 11 + 3 per obstacle, so a policy is tied to the
+  // obstacle count it trained on. Switching the slider afterwards would feed it
+  // the wrong shape, so the count is recorded and restored with the mode.
+  state.policyObstacles = world.obstacles.length;
+  $("#modePolicy").disabled = false;
+}
+
+function drawLoss() {
+  const canvas = $("#lossCanvas");
+  const context = canvas.getContext("2d");
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  canvas.height = Math.max(1, Math.round(rect.height * dpr));
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  context.clearRect(0, 0, rect.width, rect.height);
+  const history = state.lossHistory;
+  if (history.length < 2) return;
+  const maximum = Math.max(...history);
+  const minimum = Math.min(...history);
+  const span = Math.max(1e-6, maximum - minimum);
+  context.beginPath();
+  history.forEach((value, index) => {
+    const x = (index / (history.length - 1)) * rect.width;
+    const y = rect.height - ((value - minimum) / span) * (rect.height - 6) - 3;
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  });
+  context.strokeStyle = "#1d66db";
+  context.lineWidth = 1.4;
+  context.stroke();
+}
+
 function setStatus(message) {
   $("#statusNote").textContent = message;
 }
@@ -146,17 +275,22 @@ function syncUI() {
   $("#coverageMetric").textContent = `${(coverage * 100).toFixed(1)}%`;
   $("#coverageLabel").textContent = `coverage ${(coverage * 100).toFixed(0)}%`;
   $("#stepsMetric").textContent = String(world.steps);
-  $("#stateMetric").textContent = state.mode === "teleop" ? "teleop" : expert.describe();
+  $("#stateMetric").textContent =
+    state.mode === "teleop" ? "teleop" : state.mode === "policy" ? (state.policy ? "flow policy" : "untrained") : expert.describe();
   $("#demoMetric").textContent = `${stats.total}`;
   $("#successMetric").textContent = stats.total ? `${(stats.successRate * 100).toFixed(0)}%` : "—";
   $("#transitionMetric").textContent = stats.steps.toLocaleString();
 
-  $("#modeHeading").textContent = state.mode === "teleop" ? "Mouse teleoperation" : "Scripted expert";
+  $("#modeHeading").textContent =
+    state.mode === "teleop" ? "Mouse teleoperation" : state.mode === "policy" ? "Learned policy" : "Scripted expert";
   $("#runButton").textContent = state.running ? "Pause" : "Run";
   $("#recordButton").textContent = state.recording ? "Stop" : "Record";
   $("#recordButton").dataset.active = String(state.recording);
-  $("#collectButton").disabled = state.recording || state.mode === "teleop";
-  $("#clearButton").disabled = state.recording;
+  $("#collectButton").disabled = state.recording || state.mode !== "expert" || state.training;
+  $("#clearButton").disabled = state.recording || state.training;
+  $("#trainButton").disabled = state.training;
+  $("#stopTrainButton").disabled = !state.training;
+  $("#recordButton").disabled = state.training || state.mode === "policy";
   $("#teleopHint").hidden = state.mode !== "teleop";
   $(".canvas-shell").dataset.teleop = String(state.mode === "teleop");
 
@@ -190,7 +324,7 @@ function animate() {
     coverage: world.coverage(),
     trail: state.trail,
     action: state.lastAction,
-    showAction: state.mode === "expert",
+    showAction: state.mode !== "teleop",
   });
   requestAnimationFrame(animate);
 }
@@ -270,15 +404,42 @@ for (const button of document.querySelectorAll("[data-tie]")) {
 }
 
 function setMode(mode) {
+  if (mode === "policy") {
+    if (!state.policy) return;
+    // Restore the layout the policy was trained for.
+    const range = $("#obstacleRange");
+    if (Number(range.value) !== state.policyObstacles) {
+      range.value = String(state.policyObstacles);
+      $("#obstacleOutput").textContent = range.value;
+      setStatus(`Policy was trained with ${state.policyObstacles} obstacle${state.policyObstacles === 1 ? "" : "s"}; the arena has been set to match.`);
+    }
+  }
   state.mode = mode;
   state.running = false;
   $("#modeExpert").setAttribute("aria-pressed", String(mode === "expert"));
   $("#modeTeleop").setAttribute("aria-pressed", String(mode === "teleop"));
+  $("#modePolicy").setAttribute("aria-pressed", String(mode === "policy"));
   resetEpisode({ newWorld: true });
 }
 
 $("#modeExpert").addEventListener("click", () => setMode("expert"));
 $("#modeTeleop").addEventListener("click", () => setMode("teleop"));
+$("#modePolicy").addEventListener("click", () => { if (state.policy) setMode("policy"); });
+
+$("#trainButton").addEventListener("click", startTraining);
+$("#stopTrainButton").addEventListener("click", () => {
+  stopTraining();
+  setStatus("Training stopped.");
+});
+
+for (const button of document.querySelectorAll("[data-steps]")) {
+  button.addEventListener("click", () => {
+    state.trainSteps = Number(button.dataset.steps);
+    for (const other of document.querySelectorAll("[data-steps]")) {
+      other.setAttribute("aria-pressed", String(other === button));
+    }
+  });
+}
 
 $("#obstacleRange").addEventListener("input", (event) => {
   $("#obstacleOutput").textContent = event.target.value;
@@ -300,6 +461,7 @@ arena.addEventListener("pointerleave", () => {
 arena.addEventListener("pointerdown", (event) => {
   if (state.mode !== "teleop") return;
   arena.setPointerCapture(event.pointerId);
+  state.lifted = true;
   state.pointer = view.fromClient(event.clientX, event.clientY);
   if (!state.running && !state.finished) {
     state.running = true;
@@ -309,6 +471,7 @@ arena.addEventListener("pointerdown", (event) => {
 
 for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) {
   arena.addEventListener(name, (event) => {
+    state.lifted = false;
     if (arena.hasPointerCapture?.(event.pointerId)) arena.releasePointerCapture(event.pointerId);
   });
 }

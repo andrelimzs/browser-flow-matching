@@ -18,7 +18,7 @@ function isWellFormed(episode) {
   if (!Array.isArray(episode.observations) || !Array.isArray(episode.actions)) return false;
   if (episode.observations.length !== episode.actions.length) return false;
   return episode.observations.every((row) => Array.isArray(row)) &&
-    episode.actions.every((row) => Array.isArray(row) && row.length === 2);
+    episode.actions.every((row) => Array.isArray(row) && row.length >= 2);
 }
 
 export class DemoStore {
@@ -44,10 +44,10 @@ export class DemoStore {
     return this.current;
   }
 
-  record(observation, actionX, actionY) {
+  record(observation, actionX, actionY, lift = 0) {
     if (!this.current) return;
     this.current.observations.push(Array.from(observation, round));
-    this.current.actions.push([round(actionX), round(actionY)]);
+    this.current.actions.push([round(actionX), round(actionY), lift > 0.5 ? 1 : 0]);
   }
 
   // Episodes shorter than a couple of pushes are almost always a misclick.

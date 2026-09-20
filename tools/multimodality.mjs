@@ -15,7 +15,7 @@ for (let episode = 0; episode < episodes; episode++) {
   probe.reset();
   // Advance a little so the pusher is somewhere non-trivial.
   const warm = new ScriptedExpert({ random, tieBreak: "cw" });
-  for (let step = 0; step < 40; step++) { const [x, y] = warm.act(probe); probe.step(x, y); }
+  for (let step = 0; step < 40; step++) { const [x, y, lift] = warm.act(probe); probe.step(x, y, lift); }
   const state = probe.snapshot();
 
   const traces = [];
@@ -24,9 +24,9 @@ for (let episode = 0; episode < episodes; episode++) {
     const expert = new ScriptedExpert({ random, tieBreak });
     const actions = [];
     for (let step = 0; step < horizon; step++) {
-      const [x, y] = expert.act(probe);
-      actions.push([x, y]);
-      probe.step(x, y);
+      const [x, y, lift] = expert.act(probe);
+      actions.push([x, y, lift]);
+      probe.step(x, y, lift);
     }
     traces.push(actions);
   }

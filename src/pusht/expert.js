@@ -17,17 +17,10 @@
 // is the whole reason this task is worth learning with flow matching.
 
 import { circleRectContact, clamp, toLocal, wrapAngle } from "./geometry.js";
-import { pathLength, planPath, planPusherPath } from "./plan.js";
+import { pathLength, planPath } from "./plan.js";
 import { MAX_PUSHER_SPEED, PUSHER_RADIUS, SUCCESS_COVERAGE, TEE, WALL_THICKNESS } from "./sim.js";
 
 const APPROACH_GAP = 0.004;
-const ORBIT_MARGIN = 0.02;
-// An orbit pinched by an obstacle is often still walkable closer in. Trying a
-// tighter radius before falling back to planning matters because planning is
-// deterministic: every orbit abandoned is a coin flip lost, and the two orbit
-// directions are the task's main source of multimodality.
-const ORBIT_SQUEEZE = [1, 0.82, 0.66];
-const ORBIT_STEP = 0.22;
 const ARRIVAL_TOLERANCE = 0.012;
 const PUSH_STROKE_FAR = 0.06;
 const PUSH_STROKE_NEAR = 0.022;
@@ -44,7 +37,6 @@ const TRANSIT_ROTATION_SCALE = 0.35;
 const LOOKAHEAD = 0.16;
 const REPLAN_INTERVAL = 70;
 const PATH_DRIFT = 0.1;
-const PUSHER_REPLAN_INTERVAL = 30;
 // Two ways round an obstacle count as equally good below this cost ratio, and
 // the expert then picks at random. With the obstacle near the corridor centre
 // almost every layout qualifies; the gate only rejects the lopsided ones.
@@ -111,28 +103,26 @@ export class ScriptedExpert {
   }
 
   reset() {
-    this.orbitRadius = TEE.radius + PUSHER_RADIUS + ORBIT_MARGIN;
     this.routeObstacle = null;
     this.routeSide = 0;
     this.routeSides = new Map();
     this.stuck = 0;
     this.path = null;
     this.replanIn = 0;
-    this.pusherPath = null;
-    this.pusherReplanIn = 0;
     this.state = "select";
     this.contact = null;
-    this.orbitSign = 1;
     this.pushSteps = 0;
     this.approachSteps = 0;
     this.bestCoverage = 0;
     this.stalled = 0;
   }
 
-  // Returns the absolute pusher target for this control step.
+  // Returns [x, y, lift] for this control step. Lifted, the pusher travels in a
+  // straight line to the next contact instead of walking around the block, so
+  // repositioning is no longer a navigation problem.
   act(world) {
     const coverage = world.coverage();
-    if (coverage >= SUCCESS_COVERAGE) return [world.pusher.x, world.pusher.y];
+    if (coverage >= SUCCESS_COVERAGE) return [world.pusher.x, world.pusher.y, 0];
 
     this.replanIn -= 1;
     if (this.state === "select") this.selectContact(world);
@@ -148,7 +138,7 @@ export class ScriptedExpert {
         this.routeSide = 0;
         this.routeSides.clear();
       }
-      return [world.pusher.x, world.pusher.y];
+      return [world.pusher.x, world.pusher.y, 0];
     }
     this.stuck = 0;
 
@@ -388,28 +378,17 @@ export class ScriptedExpert {
     // back out to the orbit radius in that case wastes most of the episode, so
     // stay in contact whenever the new target is effectively where we are.
     const settled =
-      Math.hypot(world.pusher.x - best.approachX, world.pusher.y - best.approachY) < PUSHER_RADIUS * 1.5 &&
-      !this.segmentHitsBlock(world, world.pusher.x, world.pusher.y, best.approachX, best.approachY);
+      Math.hypot(world.pusher.x - best.approachX, world.pusher.y - best.approachY) < PUSHER_RADIUS * 1.5;
     if (settled) {
       this.state = "push";
       return;
     }
     this.state = "approach";
-    this.orbitSign = this.chooseOrbit(world, best);
-    this.pusherPath = null;
-    this.pusherReplanIn = 0;
   }
 
-  // Rough cost of getting the pusher to a target: a straight run when the block
-  // is not in the way, otherwise the arc it has to walk around the block.
+  // With lifting, getting anywhere is a straight line.
   travelCost(world, targetX, targetY) {
-    const direct = Math.hypot(world.pusher.x - targetX, world.pusher.y - targetY);
-    if (!this.segmentHitsBlock(world, world.pusher.x, world.pusher.y, targetX, targetY)) return direct;
-    const block = world.block;
-    const orbitRadius = this.orbitRadius ?? TEE.radius + PUSHER_RADIUS + ORBIT_MARGIN;
-    const from = Math.atan2(world.pusher.y - block.y, world.pusher.x - block.x);
-    const to = Math.atan2(targetY - block.y, targetX - block.x);
-    return Math.abs(wrapAngle(to - from)) * orbitRadius + orbitRadius;
+    return Math.hypot(world.pusher.x - targetX, world.pusher.y - targetY);
   }
 
   reachable(world, x, y) {
@@ -419,102 +398,9 @@ export class ScriptedExpert {
     return !world.pusherBlocked(x, y);
   }
 
-  // Prefer whichever way around the block is clear. When both are, flip a coin:
-  // that is the bimodality the learned policy has to reproduce.
-  chooseOrbit(world, target) {
-    const block = world.block;
-    const from = Math.atan2(world.pusher.y - block.y, world.pusher.x - block.x);
-    const to = Math.atan2(target.approachY - block.y, target.approachX - block.x);
-    const full = TEE.radius + PUSHER_RADIUS + ORBIT_MARGIN;
-
-    for (const squeeze of ORBIT_SQUEEZE) {
-      const radius = full * squeeze;
-      const clockwiseClear = this.arcClear(world, from, to, -1, radius);
-      const counterClear = this.arcClear(world, from, to, 1, radius);
-      if (!clockwiseClear && !counterClear) continue;
-      this.orbitRadius = radius;
-      if (clockwiseClear && !counterClear) return -1;
-      if (counterClear && !clockwiseClear) return 1;
-      if (this.tieBreak === "cw") return -1;
-      if (this.tieBreak === "ccw") return 1;
-      return this.random() < 0.5 ? -1 : 1;
-    }
-
-    // No radius admits a walkable arc; the caller must plan a route instead.
-    this.orbitRadius = full;
-    return 0;
-  }
-
-  arcClear(world, from, to, sign, radius) {
-    let sweep = wrapAngle(to - from);
-    if (sign > 0 && sweep < 0) sweep += Math.PI * 2;
-    if (sign < 0 && sweep > 0) sweep -= Math.PI * 2;
-    const steps = Math.max(2, Math.ceil(Math.abs(sweep) / 0.15));
-    for (let index = 0; index <= steps; index++) {
-      const angle = from + (sweep * index) / steps;
-      const x = world.block.x + Math.cos(angle) * radius;
-      const y = world.block.y + Math.sin(angle) * radius;
-      if (!this.reachable(world, x, y)) return false;
-      if (world.pusherTouchesBlock(x, y)) return false;
-    }
-    return true;
-  }
-
   approachTarget(world) {
-    const block = world.block;
-    const contact = this.contact;
-    const orbitRadius = this.orbitRadius ?? TEE.radius + PUSHER_RADIUS + ORBIT_MARGIN;
-
-    if (this.orbitSign === 0) return this.plannedApproach(world, contact);
-    const toPusherX = world.pusher.x - block.x;
-    const toPusherY = world.pusher.y - block.y;
-    const pusherRadius = Math.hypot(toPusherX, toPusherY);
-
-    // A straight run is fine when it does not cut through the block.
-    if (!this.segmentHitsBlock(world, world.pusher.x, world.pusher.y, contact.approachX, contact.approachY)) {
-      return [contact.approachX, contact.approachY];
-    }
-
-    // Otherwise: out to the orbit radius, around, then in.
-    if (pusherRadius < orbitRadius - ARRIVAL_TOLERANCE) {
-      const angle = Math.atan2(toPusherY, toPusherX);
-      return [block.x + Math.cos(angle) * orbitRadius, block.y + Math.sin(angle) * orbitRadius];
-    }
-
-    const current = Math.atan2(toPusherY, toPusherX);
-    const goal = Math.atan2(contact.approachY - block.y, contact.approachX - block.x);
-    let sweep = wrapAngle(goal - current);
-    if (this.orbitSign > 0 && sweep < 0) sweep += Math.PI * 2;
-    if (this.orbitSign < 0 && sweep > 0) sweep -= Math.PI * 2;
-    if (Math.abs(sweep) < ORBIT_STEP) return [contact.approachX, contact.approachY];
-    const next = current + Math.sign(sweep) * ORBIT_STEP;
-    return [block.x + Math.cos(next) * orbitRadius, block.y + Math.sin(next) * orbitRadius];
-  }
-
-  // Pusher navigation for cluttered layouts: walk a planned route to the
-  // contact, replanning periodically because the block keeps moving.
-  plannedApproach(world, contact) {
-    this.pusherReplanIn -= 1;
-    if (!this.pusherPath || this.pusherReplanIn <= 0) {
-      this.pusherPath = planPusherPath(
-        [world.pusher.x, world.pusher.y],
-        [contact.approachX, contact.approachY],
-        world.obstacles,
-        (x, y) => world.pusherTouchesBlock(x, y),
-        PUSHER_RADIUS,
-      );
-      this.pusherReplanIn = PUSHER_REPLAN_INTERVAL;
-    }
-    if (!this.pusherPath || this.pusherPath.length === 0) {
-      return [contact.approachX, contact.approachY];
-    }
-    while (
-      this.pusherPath.length > 1 &&
-      Math.hypot(world.pusher.x - this.pusherPath[0][0], world.pusher.y - this.pusherPath[0][1]) < ARRIVAL_TOLERANCE * 2
-    ) {
-      this.pusherPath.shift();
-    }
-    return this.pusherPath[0];
+    // Straight to the contact, in the air. Nothing to route around.
+    return [this.contact.approachX, this.contact.approachY, 1];
   }
 
   segmentHitsBlock(world, fromX, fromY, toX, toY) {
@@ -543,6 +429,7 @@ export class ScriptedExpert {
     return [
       contact.approachX + contact.forceX * stroke,
       contact.approachY + contact.forceY * stroke,
+      0,
     ];
   }
 
@@ -581,8 +468,7 @@ export class ScriptedExpert {
 
   describe() {
     if (!this.contact) return this.state;
-    if (this.orbitSign === 0) return `${this.state} planned`;
-    return `${this.state} ${this.orbitSign > 0 ? "ccw" : "cw"}`;
+    return this.state === "approach" ? "approach (lifted)" : "push";
   }
 }
 
@@ -602,10 +488,10 @@ export function rollout(world, expert, options = {}) {
       break;
     }
     const observation = world.writeObservation();
-    const [targetX, targetY] = expert.act(world);
+    const [targetX, targetY, lift] = expert.act(world);
     observations.push(observation);
-    actions.push(Float32Array.from([targetX, targetY]));
-    world.step(targetX, targetY);
+    actions.push(Float32Array.from([targetX, targetY, lift]));
+    world.step(targetX, targetY, lift);
   }
   return { observations, actions, success, coverage: world.coverage(), best, steps: observations.length };
 }

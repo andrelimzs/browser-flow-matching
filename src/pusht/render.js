@@ -170,14 +170,20 @@ export function createView(canvas) {
       context.stroke();
     }
 
-    // Pusher
+    // Pusher. Translucent while lifted, since it is off the table and passes
+    // over the block without touching it; a dashed outline keeps it legible
+    // against the block it is crossing.
+    const lifted = world.lifted;
     context.beginPath();
     context.arc(toX(world.pusher.x), toY(world.pusher.y), toLength(PUSHER_RADIUS), 0, Math.PI * 2);
-    context.fillStyle = CORAL;
+    context.fillStyle = lifted ? "rgba(237, 107, 85, .28)" : CORAL;
     context.fill();
-    context.strokeStyle = "rgba(120, 44, 32, .55)";
+    context.save();
+    if (lifted) context.setLineDash([toLength(0.008), toLength(0.006)]);
+    context.strokeStyle = lifted ? "rgba(120, 44, 32, .5)" : "rgba(120, 44, 32, .55)";
     context.lineWidth = 1.4;
     context.stroke();
+    context.restore();
 
     if (options.coverage !== undefined) drawCoverage(options.coverage);
   }

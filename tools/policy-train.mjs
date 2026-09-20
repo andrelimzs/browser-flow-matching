@@ -8,7 +8,7 @@ import { makePolicy, buildDataset, PolicyTrainer, sampleChunk, CHUNK } from "../
 const DEMOS = Number(process.argv[2] ?? 60);
 const TRAIN_STEPS = Number(process.argv[3] ?? 3000);
 const EVAL = Number(process.argv[4] ?? 40);
-const EXECUTE = Number(process.env.EXECUTE ?? 4);
+const EXECUTE = Number(process.env.EXECUTE ?? 16);
 const WIDTH = Number(process.env.WIDTH ?? 128);
 const CAP = 2200;
 const OBSTACLES = Number(process.env.OBSTACLES ?? 1);
@@ -28,12 +28,13 @@ for (let episode = 0; episode < DEMOS; episode++) {
   for (let step = 0; step < CAP; step++) {
     if (world.coverage() >= SUCCESS_COVERAGE) break;
     observations.push(Array.from(world.writeObservation()));
-    const [x, y] = expert.act(world);
-    actions.push([x, y]);
-    world.step(x, y);
+    const [x, y, lift] = expert.act(world);
+    actions.push([x, y, lift]);
+    world.step(x, y, lift);
   }
-  if (world.coverage() >= SUCCESS_COVERAGE) expertWins += 1;
-  episodes.push({ observations, actions, observationSize: observations[0].length });
+  const success = world.coverage() >= SUCCESS_COVERAGE;
+  if (success) expertWins += 1;
+  episodes.push({ observations, actions, success, observationSize: observations[0].length });
   collected += observations.length;
 }
 const collectSeconds = Number(process.hrtime.bigint() - collectStart) / 1e9;
@@ -41,7 +42,9 @@ console.log(`collected ${DEMOS} episodes (${collected.toLocaleString()} transiti
 
 // ---- train ----
 const dataset = buildDataset(episodes);
+console.log(`training on ${dataset.episodes}/${episodes.length} solved episodes, ${dataset.count.toLocaleString()} of ${collected.toLocaleString()} transitions (failures dropped)`);
 const policy = makePolicy({ observationSize: dataset.observationSize, width: WIDTH, maxBatch: 256, random });
+console.log(`observation: ${dataset.observationSize} egocentric dims (from ${episodes[0].observationSize} absolute)`);
 const trainer = new PolicyTrainer({ policy, batch: 256, learningRate: 0.002, random });
 console.log(`policy ${policy.model.sizes.join("->")}, ${policy.model.params.reduce((s,a)=>s+a.length,0).toLocaleString()} params`);
 
@@ -65,7 +68,7 @@ for (let episode = 0; episode < EVAL; episode++) {
   for (let step = 0; step < CAP; step++) {
     if (world.coverage() >= SUCCESS_COVERAGE) break;
     if (cursor >= EXECUTE || !chunk) {
-      chunk = sampleChunk(policy, world.writeObservation(), { steps: 10, random });
+      chunk = sampleChunk(policy, world.writeObservation(), { steps: 10, random, scales: dataset.scales });
       cursor = 0;
     }
     world.step(chunk[cursor * 2], chunk[cursor * 2 + 1]);

@@ -15,14 +15,14 @@ for (let trial = 0; trial < 40; trial++) {
   const expert = new ScriptedExpert({ random, tieBreak: "cw" });
   const actions = [];
   for (let step = 0; step < 220; step++) {
-    const [x, y] = expert.act(world);
-    actions.push([x, y]);
-    world.step(x, y);
+    const [x, y, lift] = expert.act(world);
+    actions.push([x, y, lift]);
+    world.step(x, y, lift);
   }
   const first = { ...world.block, pusherX: world.pusher.x, pusherY: world.pusher.y };
 
   world.restore(start);
-  for (const [x, y] of actions) world.step(x, y);
+  for (const [x, y] of actions) world.step(x, y, lift);
   const second = { ...world.block, pusherX: world.pusher.x, pusherY: world.pusher.y };
 
   worstPosition = Math.max(

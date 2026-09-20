@@ -86,11 +86,15 @@ button { color: inherit; }
 .legend span { display: flex; align-items: center; gap: 7px; }
 .legend i { display: inline-block; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--coral); }
+.dot-lifted { background: rgba(237, 107, 85, .28); border: 1px dashed rgba(120, 44, 32, .5); }
 .swatch-block { width: 10px; height: 10px; background: rgba(38,44,41,.88); }
 .swatch-goal { width: 10px; height: 10px; border: 1px dashed rgba(29,102,219,.75); background: rgba(29,102,219,.12); }
 .tile { width: 10px; height: 10px; border: 1px solid rgba(75,80,77,.5); border-radius: 50%; background: rgba(75,80,77,.13); }
 
 .mode-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 14px; }
+.mode-row-three { grid-template-columns: 1fr 1fr 1fr; }
+.mode-toggle:disabled { opacity: .4; cursor: default; }
+.mode-toggle:disabled:hover { background: transparent; color: var(--muted); }
 .mode-toggle { min-height: 36px; padding: 6px 12px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
 .mode-toggle + .mode-toggle { border-left: 0; }
 .mode-toggle:hover { color: var(--ink); background: var(--blue-soft); }
@@ -114,6 +118,9 @@ button { color: inherit; }
 .range-setting output { color: var(--ink); text-align: right; }
 
 .demos-label { margin-top: 26px; }
+.train-progress { margin-top: 14px; }
+#lossCanvas { width: 100%; height: 54px; display: block; border: 1px solid var(--line); background: #f4f2ec; }
+.train-status { margin: 8px 0 0; font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 
 .metrics { display: grid; grid-template-columns: 1fr 1fr; margin-top: 8px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
 .metric { padding: 14px 12px; min-width: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }

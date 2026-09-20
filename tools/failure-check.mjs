@@ -20,8 +20,8 @@ for (let episode = 0; episode < episodes; episode++) {
 
   for (let step = 0; step < 900; step++) {
     if (world.coverage() >= SUCCESS_COVERAGE) break;
-    const [x, y] = expert.act(world);
-    world.step(x, y);
+    const [x, y, lift] = expert.act(world);
+    world.step(x, y, lift);
   }
 
   if (world.coverage() >= SUCCESS_COVERAGE) { solved += 1; continue; }

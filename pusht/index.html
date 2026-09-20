@@ -61,6 +61,7 @@
 
             <div class="legend">
               <span><i class="dot"></i> Pusher</span>
+              <span><i class="dot dot-lifted"></i> Lifted</span>
               <span><i class="swatch-block"></i> Block</span>
               <span><i class="swatch-goal"></i> Goal pose</span>
               <span><i class="tile"></i> Obstacle</span>
@@ -70,9 +71,10 @@
           <article class="training-card">
             <p class="label">Controls</p>
 
-            <div class="mode-row" role="group" aria-label="Control mode">
+            <div class="mode-row mode-row-three" role="group" aria-label="Control mode">
               <button id="modeExpert" class="mode-toggle" type="button" aria-pressed="true">Expert</button>
               <button id="modeTeleop" class="mode-toggle" type="button" aria-pressed="false">Teleop</button>
+              <button id="modePolicy" class="mode-toggle" type="button" aria-pressed="false" disabled>Policy</button>
             </div>
 
             <div class="button-row">
@@ -104,6 +106,27 @@
                 <button type="button" data-tie="cw" aria-pressed="false">CW</button>
                 <button type="button" data-tie="ccw" aria-pressed="false">CCW</button>
               </div>
+            </div>
+
+            <p class="label demos-label">Policy</p>
+
+            <div class="button-row">
+              <button id="trainButton" class="primary-button" type="button">Train</button>
+              <button id="stopTrainButton" class="ghost-button" type="button" disabled>Stop</button>
+            </div>
+
+            <div class="solver-setting">
+              <span>Training steps</span>
+              <div class="step-options" role="group" aria-label="Training steps">
+                <button type="button" data-steps="2000" aria-pressed="false">2k</button>
+                <button type="button" data-steps="4000" aria-pressed="true">4k</button>
+                <button type="button" data-steps="8000" aria-pressed="false">8k</button>
+              </div>
+            </div>
+
+            <div class="train-progress" id="trainProgress" hidden>
+              <canvas id="lossCanvas" aria-label="Training loss over time"></canvas>
+              <p class="train-status" id="trainStatus">—</p>
             </div>
 
             <p class="label demos-label">Demonstrations</p>
@@ -146,8 +169,9 @@
             </div>
 
             <p class="note" id="statusNote">
-              Demonstrations are kept in this browser only. Record a few by hand, or collect them from the
-              scripted expert, then export the set as JSON.
+              Collect demonstrations from the expert or record them by hand, then train a flow-matching
+              policy on them — in this browser, in a background worker. The policy is small and trains for
+              seconds, so it is far from the expert; it is here to be watched, not to win.
             </p>
           </article>
         </section>

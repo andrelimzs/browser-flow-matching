@@ -106,6 +106,7 @@ export class PushWorld {
     this.command = { x: 0.5, y: 0.2 };
     this.obstacles = [];
     this.previous = { x: 0, y: 0, angle: 0 };
+    this.lifted = false;
     this.steps = 0;
     this.reset();
   }
@@ -156,6 +157,7 @@ export class PushWorld {
   }
 
   commit({ goal, block, obstacles, pusher }) {
+    this.lifted = false;
     this.goal = goal;
     this.block = block;
     this.obstacles = obstacles;
@@ -244,6 +246,25 @@ export class PushWorld {
     return obstacles.some((obstacle) => Math.hypot(x - obstacle.x, y - obstacle.y) < obstacle.r + PUSHER_RADIUS);
   }
 
+  // Lift is not a free choice: the pusher needs to be airborne exactly when the
+  // straight line to its target would run through the block. Deriving it here
+  // means the policy never has to predict it — which matters because as a
+  // predicted output it was 54% of the regression loss from 33% of the
+  // dimensions, and a wrong lift is catastrophic: the pusher passes through the
+  // block instead of pushing it.
+  needsLift(targetX, targetY) {
+    const dx = targetX - this.pusher.x;
+    const dy = targetY - this.pusher.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 1e-9) return false;
+    const steps = Math.max(2, Math.ceil(distance / 0.01));
+    for (let index = 1; index <= steps; index++) {
+      const amount = index / steps;
+      if (this.pusherTouchesBlock(this.pusher.x + dx * amount, this.pusher.y + dy * amount)) return true;
+    }
+    return false;
+  }
+
   pusherTouchesBlock(x, y, block = this.block) {
     toLocal(block, x, y, scratchA);
     for (const part of TEE.parts) {
@@ -252,14 +273,17 @@ export class PushWorld {
     return false;
   }
 
-  // Action space: an absolute target position for the pusher, matching the
-  // convention used by the diffusion-policy Push-T benchmark. The pusher is
-  // position-controlled and travels toward the target at a capped speed, so the
-  // action is literally a point in the plane.
-  step(targetX, targetY) {
+  // Action space: an absolute target position for the pusher plus a lift flag.
+  // The pusher is position-controlled and travels toward the target at a capped
+  // speed. Lifted, it passes over the block and the obstacles without touching
+  // them, which turns repositioning from a navigation problem into a straight
+  // line — the walls still bound it, since they are the arena edge.
+  step(targetX, targetY, lift = 0) {
     const bounds = insetBounds();
     this.command.x = clamp(targetX, bounds.min + PUSHER_RADIUS, bounds.max - PUSHER_RADIUS);
     this.command.y = clamp(targetY, bounds.min + PUSHER_RADIUS, bounds.max - PUSHER_RADIUS);
+
+    this.lifted = lift > 0.5;
 
     this.previous.x = this.block.x;
     this.previous.y = this.block.y;
@@ -291,8 +315,9 @@ export class PushWorld {
       this.pusher.y += dy * scale;
     }
     // The pusher is rigid and position-controlled, so static geometry simply
-    // truncates its motion rather than pushing back on it.
-    for (const obstacle of this.obstacles) {
+    // truncates its motion rather than pushing back on it. Lifted, it clears
+    // the obstacles entirely.
+    if (!this.lifted) for (const obstacle of this.obstacles) {
       const offsetX = this.pusher.x - obstacle.x;
       const offsetY = this.pusher.y - obstacle.y;
       const length = Math.hypot(offsetX, offsetY);
@@ -308,7 +333,7 @@ export class PushWorld {
   }
 
   solveContacts(pusherVelocityX, pusherVelocityY) {
-    this.solvePusherContact(pusherVelocityX, pusherVelocityY);
+    if (!this.lifted) this.solvePusherContact(pusherVelocityX, pusherVelocityY);
     this.solveObstacleContacts();
     this.solveWallContacts();
   }
@@ -450,7 +475,7 @@ export class PushWorld {
   }
 
   observationSize() {
-    return 10 + this.obstacles.length * 3;
+    return 11 + this.obstacles.length * 3;
   }
 
   writeObservation(out = new Float32Array(this.observationSize())) {
@@ -464,7 +489,8 @@ export class PushWorld {
     out[7] = this.goal.y;
     out[8] = Math.cos(this.goal.angle);
     out[9] = Math.sin(this.goal.angle);
-    let index = 10;
+    out[10] = this.lifted ? 1 : 0;
+    let index = 11;
     for (const obstacle of this.obstacles) {
       out[index++] = obstacle.x;
       out[index++] = obstacle.y;
@@ -489,6 +515,7 @@ export class PushWorld {
     this.command = { ...state.pusher };
     this.obstacles = state.obstacles.map((obstacle) => ({ ...obstacle }));
     this.previous = { x: this.block.x, y: this.block.y, angle: this.block.angle };
+    this.lifted = false;
     this.steps = 0;
     return this;
   }

@@ -24,9 +24,9 @@ for (let episode = 0; episode < 12; episode++) {
   for (let step = 0; step < EPISODE_CAP; step++) {
     if (world.coverage() >= SUCCESS_COVERAGE) break;
     const observation = world.writeObservation();
-    const [x, y] = expert.act(world);
+    const [x, y, lift] = expert.act(world);
     store.record(observation, x, y);
-    world.step(x, y);
+    world.step(x, y, lift);
   }
   store.end(world, { keep: true });
 }
@@ -63,7 +63,7 @@ for (const [obstacleCount, steps] of [[1, 20], [3, 20], [1, 20]]) {
   mixed.begin(w, "scripted");
   for (let i = 0; i < steps; i++) {
     const observation = w.writeObservation();
-    const [x, y] = e.act(w);
+    const [x, y, lift] = e.act(w);
     mixed.record(observation, x, y);
     w.step(x, y);
   }
