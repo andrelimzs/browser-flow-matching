@@ -588,7 +588,10 @@ function setMode(mode) {
   $("#modeExpert").setAttribute("aria-pressed", String(mode === "expert"));
   $("#modeTeleop").setAttribute("aria-pressed", String(mode === "teleop"));
   $("#modePolicy").setAttribute("aria-pressed", String(mode === "policy"));
-  resetEpisode({ newWorld: true });
+  // Rewind the current layout when handing control to another controller. A
+  // mode comparison should start from the same block, goal and pusher pose;
+  // only the explicit New world control samples another configuration.
+  resetEpisode({ newWorld: false });
 }
 
 $("#modeExpert").addEventListener("click", () => setMode("expert"));
