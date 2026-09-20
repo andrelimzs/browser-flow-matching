@@ -52,6 +52,11 @@ button { color: inherit; }
 .header-meta { display: flex; align-items: center; gap: 22px; font-family: "DM Mono", monospace; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .header-link { color: var(--blue); text-decoration: none; border-bottom: 1px solid transparent; }
 .header-link:hover { border-bottom-color: var(--blue); }
+.page-tabs { display: flex; border: 1px solid var(--line); }
+.page-tab { min-height: 30px; padding: 7px 11px; color: var(--muted); text-decoration: none; border-left: 1px solid var(--line); }
+.page-tab:first-child { border-left: 0; }
+.page-tab:hover { color: var(--ink); background: var(--blue-soft); }
+.page-tab[aria-current="page"] { color: #fff; background: var(--ink); }
 .live-indicator { display: flex; gap: 7px; align-items: center; }
 .live-indicator i { width: 7px; height: 7px; border-radius: 50%; background: #51a565; box-shadow: 0 0 0 4px rgba(81,165,101,.12); }
 
@@ -105,6 +110,7 @@ button { color: inherit; }
 .mode-toggle[aria-pressed="true"] { color: #fff; background: var(--ink); border-color: var(--ink); }
 
 .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.button-row-single { grid-template-columns: 1fr; }
 .primary-button { min-height: 38px; border: 1px solid var(--ink); background: var(--ink); color: #fff; cursor: pointer; font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; transition: opacity .18s; }
 .primary-button:hover { opacity: .85; }
 .primary-button[data-active="true"] { background: var(--coral); border-color: var(--coral); }
@@ -163,5 +169,4 @@ button { color: inherit; }
 .line-expert { background: rgba(29, 102, 219, .85); }
 .line-policy { background: rgba(237, 107, 85, .9); }
 .swatch-ghost { width: 10px; height: 10px; border: 1px dashed rgba(38,44,41,.4); background: rgba(38,44,41,.1); }
-.link-button { display: flex; align-items: center; justify-content: center; text-decoration: none; }
 .empty-note { padding: 14px 10px; font-family: "DM Mono", monospace; font-size: 10px; color: var(--muted); }

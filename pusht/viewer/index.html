@@ -13,12 +13,15 @@
   <body>
     <div id="app">
       <header class="site-header">
-        <a class="brand" href="../" aria-label="Back to Push-T">
+        <a class="brand" href="../" aria-label="Push-T simulator">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span>Demo Viewer</span>
+          <span>Push-T</span>
         </a>
         <div class="header-meta">
-          <span>Push-T · Replay</span>
+          <nav class="page-tabs" aria-label="Push-T pages">
+            <a class="page-tab" href="../">Simulator</a>
+            <a class="page-tab" href="./" aria-current="page">Demo viewer</a>
+          </nav>
           <span class="live-indicator"><i></i> Local data</span>
         </div>
       </header>
@@ -69,9 +72,8 @@
             <p class="label">Episodes</p>
             <div class="episode-list" id="episodeList"></div>
 
-            <div class="button-row">
+            <div class="button-row button-row-single">
               <button id="rerunButton" class="primary-button" type="button">Re-run policy</button>
-              <a class="ghost-button link-button" href="../">Back to demo</a>
             </div>
 
             <div class="metrics">
