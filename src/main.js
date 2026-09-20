@@ -42,6 +42,12 @@ function distance(a, b) {
   return Math.hypot(a[0] - b[0], a[1] - b[1]);
 }
 
+function sourceProgressScore(point) {
+  const startDistance = distance(point, START);
+  const goalDistance = distance(point, GOAL);
+  return startDistance / Math.max(1e-6, startDistance + goalDistance);
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -253,6 +259,28 @@ function distanceToPath(point, path = referencePath) {
   return minimum;
 }
 
+function nearestPathProgress(point) {
+  let bestDistance = Infinity;
+  let bestProgress = 0;
+  for (let i = 1; i < referencePath.length; i++) {
+    const start = referencePath[i - 1];
+    const end = referencePath[i];
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const denominator = dx * dx + dy * dy;
+    const amount = denominator === 0
+      ? 0
+      : clamp(((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / denominator, 0, 1);
+    const projected = [start[0] + dx * amount, start[1] + dy * amount];
+    const candidateDistance = distance(point, projected);
+    if (candidateDistance < bestDistance) {
+      bestDistance = candidateDistance;
+      bestProgress = (i - 1 + amount) / (referencePath.length - 1);
+    }
+  }
+  return { distance: bestDistance, progress: bestProgress };
+}
+
 function makeRandomObstacles(count) {
   const obstacles = [];
   let attempts = 0;
@@ -275,7 +303,7 @@ function makeRandomObstacles(count) {
 
 function generateWorld() {
   for (let attempt = 0; attempt < 120; attempt++) {
-    const obstacles = makeRandomObstacles(3 + (random() < 0.5 ? 0 : 1));
+    const obstacles = makeRandomObstacles(3);
     if (obstacles.length < 3) continue;
     const gridPath = planGridPath(obstacles);
     if (!gridPath) continue;
@@ -401,9 +429,10 @@ class TinyMLP {
   trainBatch() {
     for (const gradient of this.grads) gradient.fill(0);
     const sources = Array.from({ length: BATCH }, sampleUniformFree);
+    if (usePathProgress) sources.sort((a, b) => sourceProgressScore(a) - sourceProgressScore(b));
     const progresses = new Float32Array(BATCH);
     const targets = Array.from({ length: BATCH }, (_, index) => {
-      progresses[index] = random();
+      progresses[index] = usePathProgress ? (index + random()) / BATCH : random();
       return samplePathPoint(progresses[index]);
     });
     let loss = 0;
@@ -417,7 +446,7 @@ class TinyMLP {
       const y = source[1] * (1 - time) + target[1] * time;
       const targetX = target[0] - source[0];
       const targetY = target[1] - source[1];
-      const output = this.forward(x, y, time, progress);
+      const output = this.forward(x, y, time, usePathProgress ? progress : 0);
       const errorX = output[0] - targetX;
       const errorY = output[1] - targetY;
       const deltaX = errorX / BATCH;
@@ -472,6 +501,7 @@ class TinyMLP {
 let world = generateWorld();
 let obstacles = world.obstacles;
 let referencePath = world.path;
+let usePathProgress = false;
 let model = new TinyMLP();
 let training = true;
 let flowPlaying = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -494,8 +524,14 @@ let latestCoverageRate = null;
 function resetParticles() {
   particles = Array.from({ length: PARTICLE_COUNT }, () => {
     const [x, y] = sampleUniformFree();
-    return { x, y, x0: x, y0: y, progress: random(), tail: [], path: [] };
+    return { x, y, x0: x, y0: y, progress: 0, tail: [], path: [] };
   });
+  if (usePathProgress) {
+    particles.sort((a, b) => sourceProgressScore([a.x0, a.y0]) - sourceProgressScore([b.x0, b.y0]));
+    particles.forEach((particle, index) => {
+      particle.progress = (index + 0.5) / particles.length;
+    });
+  }
   buildParticlePaths();
   simTime = 0;
   playbackTime = 0;
@@ -511,7 +547,7 @@ function buildParticlePaths() {
     let y = particle.y0;
     particle.path = [[x, y]];
     for (let step = 0; step < inferenceSteps; step++) {
-      const [velocityX, velocityY] = model.forward(x, y, step * dt, particle.progress);
+      const [velocityX, velocityY] = model.forward(x, y, step * dt, usePathProgress ? particle.progress : 0);
       x += velocityX * dt;
       y += velocityY * dt;
       particle.path.push([x, y]);
@@ -637,22 +673,6 @@ function drawFlow() {
   flowCtx.stroke();
   flowCtx.setLineDash([]);
 
-  flowCtx.fillStyle = "rgba(20, 23, 22, .9)";
-  for (const fraction of [0.28, 0.52, 0.76]) {
-    const index = Math.min(referencePath.length - 2, Math.floor(fraction * (referencePath.length - 1)));
-    const point = referencePath[index];
-    const next = referencePath[index + 1];
-    const angle = Math.atan2(toY(next[1]) - toY(point[1]), toX(next[0]) - toX(point[0]));
-    const x = toX(point[0]);
-    const y = toY(point[1]);
-    flowCtx.beginPath();
-    flowCtx.moveTo(x + Math.cos(angle) * 5, y + Math.sin(angle) * 5);
-    flowCtx.lineTo(x + Math.cos(angle + 2.5) * 5, y + Math.sin(angle + 2.5) * 5);
-    flowCtx.lineTo(x + Math.cos(angle - 2.5) * 5, y + Math.sin(angle - 2.5) * 5);
-    flowCtx.closePath();
-    flowCtx.fill();
-  }
-
   for (const particle of particles) {
     if (particle.tail.length > 0) {
       flowCtx.beginPath();
@@ -736,7 +756,7 @@ function updateTelemetry() {
   $("#speedMetric").textContent = measuredSpeed ? Math.round(measuredSpeed) : "—";
   $("#hitMetric").textContent = latestPathRate === null
     ? "—"
-    : `${Math.round(latestPathRate * 100)}% on path · ${Math.round(latestCoverageRate * 100)}% covered`;
+    : `${Math.round(latestPathRate * 100)}% ${usePathProgress ? "at s" : "on path"} · ${Math.round(latestCoverageRate * 100)}% covered`;
   $("#obstacleSummary").textContent = String(obstacles.length);
   $("#routeSummary").textContent = world.length.toFixed(2);
   if (lossHistory.length > 12) {
@@ -753,14 +773,20 @@ function evaluateRollouts() {
   const binCount = 20;
   for (const particle of particles) {
     const endpoint = particle.path[particle.path.length - 1];
-    const expected = referenceState(particle.progress);
-    if (distance(endpoint, expected) <= 0.035) {
+    const match = usePathProgress
+      ? { distance: distance(endpoint, referenceState(particle.progress)), progress: particle.progress }
+      : nearestPathProgress(endpoint);
+    if (match.distance <= 0.035) {
       onPath++;
-      occupiedBins.add(Math.min(binCount - 1, Math.floor(particle.progress * binCount)));
+      occupiedBins.add(Math.min(binCount - 1, Math.floor(match.progress * binCount)));
     }
   }
   latestPathRate = onPath / particles.length;
   latestCoverageRate = occupiedBins.size / binCount;
+}
+
+function trainingStatusText() {
+  return usePathProgress ? "Learning ordered positions along the path" : "Matching uniform samples to the path";
 }
 
 function animate(now) {
@@ -814,7 +840,7 @@ function resetModelForWorld() {
   training = true;
   flowPlaying = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   $("#trainingToggle").innerHTML = '<span aria-hidden="true">Ⅱ</span> Pause';
-  $("#trainingStatus").textContent = "Matching uniform samples to the path";
+  $("#trainingStatus").textContent = trainingStatusText();
   $("#lossTrend").textContent = "Collecting data";
   $("#flowToggle").innerHTML = flowPlaying ? '<span aria-hidden="true">Ⅱ</span>' : '<span aria-hidden="true">▶</span>';
   $("#flowToggle").setAttribute("aria-label", flowPlaying ? "Pause flow animation" : "Play flow animation");
@@ -826,7 +852,19 @@ function resetModelForWorld() {
 $("#trainingToggle").addEventListener("click", () => {
   training = !training;
   $("#trainingToggle").innerHTML = training ? '<span aria-hidden="true">Ⅱ</span> Pause' : '<span aria-hidden="true">▶</span> Train';
-  $("#trainingStatus").textContent = training ? "Matching uniform samples to the path" : "Flow weights are frozen";
+  $("#trainingStatus").textContent = training ? trainingStatusText() : "Flow weights are frozen";
+});
+
+$("#progressToggle").addEventListener("click", () => {
+  usePathProgress = !usePathProgress;
+  $("#progressToggle").textContent = usePathProgress ? "On" : "Off";
+  $("#progressToggle").setAttribute("aria-pressed", String(usePathProgress));
+  $("#hitMetricLabel").textContent = usePathProgress
+    ? "Progress accuracy / trajectory coverage"
+    : "Samples on path / trajectory coverage";
+  $("#conditioningSummary").textContent = usePathProgress ? "Flow τ · progress s" : "Flow τ only";
+  $("#couplingSummary").textContent = usePathProgress ? "Ranked by proximity" : "Independent";
+  resetModelForWorld();
 });
 
 $("#flowToggle").addEventListener("click", () => {

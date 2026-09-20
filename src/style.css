@@ -94,6 +94,9 @@ input[type="range"] { width: 100%; accent-color: var(--blue); cursor: pointer; }
 .step-options button:first-child { border-left: 0; }
 .step-options button:hover { color: var(--ink); background: var(--blue-soft); }
 .step-options button[aria-pressed="true"] { color: #fff; background: var(--blue); }
+.mode-toggle { min-width: 72px; min-height: 30px; padding: 4px 12px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; }
+.mode-toggle:hover { color: var(--ink); background: var(--blue-soft); }
+.mode-toggle[aria-pressed="true"] { color: #fff; background: var(--ink); }
 .legend { border-top: 1px solid var(--line); margin-top: 15px; padding-top: 15px; display: flex; flex-wrap: wrap; gap: 22px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
 .legend span { display: flex; align-items: center; gap: 7px; }
 .legend i { display: inline-block; }
@@ -165,6 +168,7 @@ footer { min-height: 78px; display: flex; justify-content: space-between; align-
   .solver-setting { align-items: stretch; flex-direction: column; gap: 8px; }
   .step-options { width: 100%; }
   .step-options button { flex: 1; min-width: 0; min-height: 44px; }
+  .mode-toggle { min-height: 44px; }
   .legend { gap: 12px; }
   .explanation { margin-top: 64px; }
   .explanation-heading { display: block; }

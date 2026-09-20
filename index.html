@@ -73,6 +73,11 @@
               </div>
             </div>
 
+            <div class="solver-setting">
+              <span>Path progress s</span>
+              <button id="progressToggle" class="mode-toggle" type="button" aria-pressed="false">Off</button>
+            </div>
+
             <div class="legend" aria-hidden="true">
               <span><i class="dot dot-particle"></i>Flow samples</span>
               <span><i class="line line-field"></i>GT path · start → goal</span>
@@ -93,7 +98,7 @@
               <div class="metric"><span>Step</span><strong id="stepMetric">0</strong></div>
               <div class="metric"><span>Loss</span><strong id="lossMetric">—</strong></div>
               <div class="metric"><span>Speed</span><strong><span id="speedMetric">—</span><small> step/s</small></strong></div>
-              <div class="metric metric-wide"><span>Progress accuracy / trajectory coverage</span><strong id="hitMetric">—</strong></div>
+              <div class="metric metric-wide"><span id="hitMetricLabel">Samples on path / trajectory coverage</span><strong id="hitMetric">—</strong></div>
             </div>
 
             <div class="loss-panel">
@@ -108,9 +113,9 @@
               <div class="summary-row"><span>Batch size</span><strong>96</strong></div>
               <div class="summary-row"><span>Planner</span><strong>Inflated-grid A*</strong></div>
               <div class="summary-row"><span>Source</span><strong>Uniform free space</strong></div>
-              <div class="summary-row"><span>Target</span><strong>p(s) on complete path</strong></div>
-              <div class="summary-row"><span>Conditioning</span><strong>Flow τ · progress s</strong></div>
-              <div class="summary-row"><span>Coupling</span><strong>Conditional on s</strong></div>
+              <div class="summary-row"><span>Target</span><strong>Complete A* path</strong></div>
+              <div class="summary-row"><span>Conditioning</span><strong id="conditioningSummary">Flow τ only</strong></div>
+              <div class="summary-row"><span>Coupling</span><strong id="couplingSummary">Independent</strong></div>
               <div class="summary-row"><span>Obstacles</span><strong id="obstacleSummary">—</strong></div>
               <div class="summary-row"><span>Route length</span><strong id="routeSummary">—</strong></div>
               <div class="summary-row"><span>Inference</span><strong id="inferenceSummary">20 Euler steps</strong></div>
@@ -140,18 +145,18 @@
             <article>
               <span class="step-number">02</span>
               <h3>Pair</h3>
-              <p>Sample progress s uniformly along the route, retain it as conditioning, and pair p(s) with an independent free-space source.</p>
+              <p>Pair free-space sources with samples along the full route. Turn on progress s to rank sources from start-nearest to goal-nearest.</p>
             </article>
             <article>
               <span class="step-number">03</span>
               <h3>Match</h3>
-              <p>Integrate over flow time τ while holding each particle’s s fixed, so it lands at the correct ordered position along the route.</p>
+              <p>Integrate over flow time τ to recover the path distribution. With progress enabled, each particle also targets its ordered route position.</p>
             </article>
           </div>
           <div class="equation" aria-label="Flow matching training equations">
             <span>x<sub>τ</sub> = (1 − τ)x<sub>0</sub> + τp(s)</span>
             <i></i>
-            <span>v<sub>θ</sub>(x<sub>τ</sub>, τ, s) ≈ p(s) − x<sub>0</sub></span>
+            <span>v<sub>θ</sub>(x<sub>τ</sub>, τ [, s]) ≈ p(s) − x<sub>0</sub></span>
           </div>
         </section>
       </main>

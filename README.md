@@ -13,14 +13,14 @@ Open `http://localhost:5173`.
 
 ## How it works
 
-- World: fixed bottom-left and top-right route endpoints, a perimeter wall, and 3–4 widely spaced circular obstacles
+- World: fixed bottom-left and top-right route endpoints, a perimeter wall, and exactly 3 widely spaced circular obstacles
 - Planner: 8-connected A* on an obstacle-inflated grid, followed by collision-checked path shortcutting
 - Source distribution: uniform samples over collision-free workspace positions
 - Target distribution: the ordered curve `p(s) = (x(s), y(s))`, with `s` sampled uniformly along the complete A* route
-- Coupling: independent free-space sources conditioned on each sampled path progress `s`
+- Coupling: independent free-space/path samples by default; optional progress mode ranks sources from start-nearest to goal-nearest and couples them to increasing `s`
 - Probability path: `x_τ = (1 - τ)x_0 + τp(s)`
 - Target velocity: `p(s) - x_0`
-- Conditioning: path progress `s` is held fixed while flow time `τ` advances from 0 to 1
+- Conditioning: flow time `τ` by default; optional path progress `s` is held fixed while `τ` advances from 0 to 1
 - Model: `20 → 64 → 64 → 2` tanh MLP with multiscale spatial, flow-time, and path-progress Fourier features
 - Time sampling: half uniform, half biased toward the thin terminal path distribution
 - Optimizer: Adam, implemented with typed arrays
