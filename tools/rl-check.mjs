@@ -17,6 +17,10 @@ import { trainPPO } from "../src/pusht/rl/ppo.js";
 import { trainSAC } from "../src/pusht/rl/sac.js";
 
 const finiteModel = (model) => model.params.every((buffer) => buffer.every(Number.isFinite));
+const scaledRewardEnv = new PushTRLEnv({ distanceRewardScale: 3 });
+if (Math.abs(scaledRewardEnv.pusherDistanceRewardScale - 0.3) > 1e-12) {
+  throw new Error("pusher shaping is not 0.1x the block-distance weight");
+}
 
 // The block starts near the goal, moves to the final task radius by 70%, and
 // gets a randomized valid bearing while holding the scheduled radius exact.
@@ -67,12 +71,14 @@ const env = new PushTRLEnv({ seed: 10, horizon: 2200 });
 env.setTrainingProgress(1);
 let observation = env.reset();
 const initialDistance = env.distance;
+const initialPusherDistanceToGoal = env.pusherDistance;
 const initialOrientationError = env.orientationError;
 if (observation.length !== RL_OBSERVATION_SIZE || RL_ACTION_SIZE !== 2) throw new Error("wrong RL shape");
 const expert = new ScriptedExpert({ random: createRandom(11), tieBreak: "cw" });
 const action = new Float32Array(2);
 let completionRewards = 0;
 let distanceReward = 0;
+let pusherDistanceReward = 0;
 let orientationReward = 0;
 let finalClosenessReward = 0;
 let totalReward = 0;
@@ -85,23 +91,30 @@ for (let step = 0; step < 2200; step++) {
   observation = transition.observation;
   completionRewards += transition.completionReward;
   distanceReward += transition.distanceProgress;
+  pusherDistanceReward += transition.pusherDistanceProgress;
   orientationReward += transition.orientationProgress;
   finalClosenessReward += transition.finalClosenessReward;
   totalReward += transition.reward;
   if (transition.done) { solved = transition.success; break; }
 }
 const expectedDistanceReward = initialDistance - env.distance;
+const expectedPusherDistanceReward = initialPusherDistanceToGoal - env.pusherDistance;
 const expectedOrientationReward = initialOrientationError - env.orientationError;
 console.log(
   `environment: obs ${observation.length}, action ${RL_ACTION_SIZE}, solved ${solved}, ` +
   `completion ${completionRewards}, distance reward ${distanceReward.toFixed(4)}, ` +
+  `pusher reward ${(0.1 * pusherDistanceReward).toFixed(4)}, ` +
   `orientation reward ${orientationReward.toFixed(4)}, closeness ${finalClosenessReward.toFixed(4)}, ` +
   `total ${totalReward.toFixed(4)}`,
 );
 if (!solved || completionRewards !== 1) throw new Error("completion reward is wrong");
 if (Math.abs(distanceReward - expectedDistanceReward) > 1e-6) throw new Error("distance shaping does not telescope");
+if (Math.abs(pusherDistanceReward - expectedPusherDistanceReward) > 1e-6) {
+  throw new Error("pusher distance shaping does not telescope");
+}
 if (Math.abs(orientationReward - expectedOrientationReward) > 1e-6) throw new Error("orientation shaping does not telescope");
-if (Math.abs(totalReward - (1 + finalClosenessReward + expectedDistanceReward + expectedOrientationReward)) > 1e-6) {
+if (Math.abs(totalReward - (1 + finalClosenessReward + expectedDistanceReward +
+    0.1 * expectedPusherDistanceReward + expectedOrientationReward)) > 1e-6) {
   throw new Error("combined reward is wrong");
 }
 

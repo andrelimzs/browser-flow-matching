@@ -2,8 +2,9 @@
 //
 // Observation: the current normalized simulator observation (no frame stack).
 // Action: normalized dx/dy in [-1, 1], scaled to one maximum pusher step.
-// Reward: progress in block position and orientation, final overlap closeness,
-// +1 on completion, or -1 on wall contact.
+// Reward: progress in block position and orientation, 0.1x progress in pusher
+// distance to the goal, final overlap closeness, +1 on completion, or -1 on
+// wall contact.
 
 import {
   FIXED_BLOCK_START,
@@ -47,6 +48,7 @@ export class PushTRLEnv {
     seed = 1,
     horizon = 200,
     distanceRewardScale = 1,
+    pusherDistanceRewardScale = distanceRewardScale * 0.1,
     orientationRewardScale = 1,
     curriculum = true,
   } = {}) {
@@ -54,6 +56,7 @@ export class PushTRLEnv {
     this.world = new PushWorld({ random: this.random, obstacleCount: 0 });
     this.horizon = horizon;
     this.distanceRewardScale = distanceRewardScale;
+    this.pusherDistanceRewardScale = pusherDistanceRewardScale;
     this.orientationRewardScale = orientationRewardScale;
     this.curriculum = curriculum;
     this.trainingProgress = 0;
@@ -61,6 +64,7 @@ export class PushTRLEnv {
     this.episodeReturn = 0;
     this.episodeSteps = 0;
     this.distance = 0;
+    this.pusherDistance = 0;
     this.orientationError = 0;
   }
 
@@ -115,6 +119,10 @@ export class PushTRLEnv {
     return Math.hypot(this.world.goal.x - this.world.block.x, this.world.goal.y - this.world.block.y);
   }
 
+  pusherGoalDistance() {
+    return Math.hypot(this.world.goal.x - this.world.pusher.x, this.world.goal.y - this.world.pusher.y);
+  }
+
   blockGoalOrientationError() {
     return Math.abs(wrapAngle(this.world.goal.angle - this.world.block.angle)) / Math.PI;
   }
@@ -140,6 +148,7 @@ export class PushTRLEnv {
     this.episodeReturn = 0;
     this.episodeSteps = 0;
     this.distance = this.blockGoalDistance();
+    this.pusherDistance = this.pusherGoalDistance();
     this.orientationError = this.blockGoalOrientationError();
     return this.observe();
   }
@@ -152,6 +161,9 @@ export class PushTRLEnv {
     const distance = this.blockGoalDistance();
     const distanceProgress = this.distance - distance;
     this.distance = distance;
+    const pusherDistance = this.pusherGoalDistance();
+    const pusherDistanceProgress = this.pusherDistance - pusherDistance;
+    this.pusherDistance = pusherDistance;
     const orientationError = this.blockGoalOrientationError();
     const orientationProgress = this.orientationError - orientationError;
     this.orientationError = orientationError;
@@ -165,6 +177,7 @@ export class PushTRLEnv {
     const finalClosenessReward = done && !wallContact ? coverage : 0;
     const reward = wallContact ? wallPenalty : completionReward + finalClosenessReward +
       this.distanceRewardScale * distanceProgress +
+      this.pusherDistanceRewardScale * pusherDistanceProgress +
       this.orientationRewardScale * orientationProgress;
     this.episodeReturn += reward;
     return {
@@ -175,6 +188,8 @@ export class PushTRLEnv {
       wallPenalty,
       distanceProgress,
       distance,
+      pusherDistanceProgress,
+      pusherDistance,
       orientationProgress,
       orientationError,
       done,

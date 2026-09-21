@@ -99,7 +99,7 @@ exploration. Both deliberately use the same minimal task definition:
 
 - observation: one normalized 11-value simulator frame, with no history or frame stack
 - action: normalized `dx, dy` in `[-1, 1]`, scaled to one `0.017` pusher step
-- reward: progress in block-to-goal center distance plus progress in normalized orientation error, final overlap coverage as a terminal closeness score, `+1` on completion, or `-1` and termination when the pusher touches the outer wall
+- reward: progress in block-to-goal center distance, `0.1×` progress in pusher-to-goal distance, plus progress in normalized orientation error; final overlap coverage as a terminal closeness score, `+1` on completion, or `-1` and termination when the pusher touches the outer wall
 - episode horizon: 200 steps by default
 
 With the position curriculum enabled (the browser default), the block begins at 25% of the original
@@ -110,8 +110,9 @@ full-task distance at 70%, and stays there for the remaining 30%. The browser co
 curriculum to train on the original fixed start from the first episode.
 
 Training is seeded and runs in Node. Set `OUT=policy.json` to save the actor and its evaluation metadata.
-Position and orientation progress earn positive reward, regress earns the matching negative reward, and
-waiting earns zero. Orientation error is divided by π, bounding its net shaping range to `[-1, 1]`.
+Block position, pusher position, and orientation progress earn positive reward; regress earns the matching
+negative reward, and waiting earns zero. Pusher-to-goal progress has `0.1×` the weight of block-to-goal
+progress. Orientation error is divided by π, bounding its net shaping range to `[-1, 1]`.
 At success or timeout, the final shape-overlap coverage is added as a closeness reward. Completion counts
 remain explicit in the CLI output.
 
