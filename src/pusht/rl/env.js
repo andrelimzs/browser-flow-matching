@@ -229,16 +229,20 @@ export class PushTRLEnv {
     const coverage = this.world.coverage();
     const success = coverage >= SUCCESS_COVERAGE;
     const wallContact = !success && this.pusherTouchesWall();
+    const wallTermination = wallContact && this.rewardShaping.pusherWall;
     const blockWallContact = this.blockTouchesWall();
+    const blockWallTermination = !success && blockWallContact && this.rewardShaping.blockWall;
     const stalled = !success && this.stationarySteps >= this.maxStationarySteps;
     const completionReward = success && this.rewardShaping.completion ? 1 : 0;
-    const wallPenalty = wallContact && this.rewardShaping.pusherWall ? -1 : 0;
-    const blockWallPenalty = blockWallContact && this.rewardShaping.blockWall ? -10 : 0;
+    const wallPenalty = wallTermination ? -1 : 0;
+    const blockWallPenalty = blockWallTermination ? -10 : 0;
     const inactivityPenalty = stalled && this.rewardShaping.inactivity ? -1 : 0;
     const stepPenalty = this.rewardShaping.stepPenalty ? -0.01 : 0;
-    const truncated = !success && !wallContact && !stalled && this.episodeSteps >= this.horizon;
-    const done = success || wallContact || stalled || truncated;
-    const finalClosenessReward = done && !wallContact && !stalled && this.rewardShaping.closeness
+    const truncated = !success && !wallTermination && !blockWallTermination && !stalled &&
+      this.episodeSteps >= this.horizon;
+    const done = success || wallTermination || blockWallTermination || stalled || truncated;
+    const finalClosenessReward = done && !wallTermination && !blockWallTermination && !stalled &&
+      this.rewardShaping.closeness
       ? Math.exp(-distance) + Math.exp(-orientationError)
       : 0;
     const reward = completionReward + finalClosenessReward + wallPenalty + blockWallPenalty +
@@ -270,7 +274,9 @@ export class PushTRLEnv {
       done,
       success,
       wallContact,
+      wallTermination,
       blockWallContact,
+      blockWallTermination,
       stalled,
       truncated,
       coverage,

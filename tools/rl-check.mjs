@@ -299,18 +299,23 @@ if (Math.abs(closenessTransition.finalClosenessReward - expectedClosenessReward)
   throw new Error("terminal closeness reward does not match exp(-distance) + exp(-angle error)");
 }
 
-// Pusher-wall contact remains terminal, but its reward component defaults off.
-const wallEnv = new PushTRLEnv({ seed: 15, horizon: 100, curriculum: false });
+// The pusher-wall toggle links its penalty and termination behavior.
+const wallEnv = new PushTRLEnv({
+  seed: 15,
+  horizon: 100,
+  curriculum: false,
+  maxStationarySteps: Infinity,
+});
 wallEnv.reset();
 let wallTransition = null;
-for (let step = 0; step < 20 && !wallTransition?.done; step++) {
+for (let step = 0; step < 20 && !wallTransition?.wallContact; step++) {
   wallTransition = wallEnv.step(Float32Array.of(-1, 0));
 }
 console.log(
   `wall contact: done ${wallTransition?.done}, contact ${wallTransition?.wallContact}, reward ${wallTransition?.reward}`,
 );
-if (!wallTransition?.done || !wallTransition.wallContact || wallTransition.success || wallTransition.truncated) {
-  throw new Error("wall contact did not terminate as a failure");
+if (!wallTransition?.wallContact || wallTransition.wallTermination || wallTransition.done) {
+  throw new Error("disabled pusher-wall component terminated the episode");
 }
 const expectedWallReward = wallTransition.distanceShapingReward +
   wallTransition.pusherDistanceShapingReward + wallTransition.orientationShapingReward +
@@ -319,8 +324,25 @@ if (wallTransition.wallPenalty !== 0 || Math.abs(wallTransition.reward - expecte
   throw new Error("disabled pusher-wall penalty changed the reward");
 }
 
-// Block-wall contact contributes an additive -10 penalty without changing the
-// pusher-wall termination rule.
+const terminatingWallEnv = new PushTRLEnv({
+  seed: 15,
+  horizon: 100,
+  curriculum: false,
+  maxStationarySteps: Infinity,
+  rewardShaping: { pusherWall: true },
+});
+terminatingWallEnv.reset();
+let terminatingWallTransition = null;
+for (let step = 0; step < 20 && !terminatingWallTransition?.done; step++) {
+  terminatingWallTransition = terminatingWallEnv.step(Float32Array.of(-1, 0));
+}
+if (!terminatingWallTransition?.wallContact || !terminatingWallTransition.wallTermination ||
+    !terminatingWallTransition.done || terminatingWallTransition.wallPenalty !== -1 ||
+    terminatingWallTransition.success || terminatingWallTransition.truncated) {
+  throw new Error("enabled pusher-wall component did not penalize and terminate");
+}
+
+// The block-wall toggle likewise links its -10 penalty and termination behavior.
 const blockWallEnv = new PushTRLEnv({
   seed: 17,
   horizon: 100,
@@ -344,9 +366,10 @@ console.log(
   `block wall: contact ${blockWallTransition.blockWallContact}, penalty ${blockWallTransition.blockWallPenalty}, ` +
   `done ${blockWallTransition.done}`,
 );
-if (!blockWallTransition.blockWallContact || blockWallTransition.blockWallPenalty !== -10 ||
-    blockWallTransition.reward !== -10 || blockWallTransition.done) {
-  throw new Error("block-wall contact penalty is wrong");
+if (!blockWallTransition.blockWallContact || !blockWallTransition.blockWallTermination ||
+    blockWallTransition.blockWallPenalty !== -10 || blockWallTransition.reward !== -10 ||
+    !blockWallTransition.done || blockWallTransition.success || blockWallTransition.truncated) {
+  throw new Error("enabled block-wall component did not penalize and terminate");
 }
 
 // Validate the critic input-gradient path against finite differences.

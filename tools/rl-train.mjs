@@ -60,7 +60,7 @@ if (process.env.OUT) {
     algorithm,
     observation: "single normalized frame",
     action: "dx,dy projected onto the unit disk and scaled to max pusher speed",
-    reward: "signed block-goal, pusher-goal, and orientation progress + exp(-distance) + exp(-normalized angle error) final closeness + completion; -0.01 every step; -1 and termination after 5 stationary pusher steps; wall penalty components default off",
+    reward: "signed block-goal, pusher-goal, and orientation progress + exp(-distance) + exp(-normalized angle error) final closeness + completion; -0.01 every step; -1 and termination after 5 stationary pusher steps; each wall penalty toggle also controls its termination",
     seed,
     totalSteps,
     horizon,

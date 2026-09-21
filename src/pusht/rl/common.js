@@ -277,6 +277,7 @@ export function recordPolicyRollout(actor, env, {
   let totalReturn = 0;
   let success = false;
   let wallContact = false;
+  let blockWallContact = false;
   let stalled = false;
   let coverage = env.world.coverage();
 
@@ -310,7 +311,8 @@ export function recordPolicyRollout(actor, env, {
     totalReturn += transition.reward;
     coverage = transition.coverage;
     success = transition.success;
-    wallContact = transition.wallContact;
+    wallContact = transition.wallTermination;
+    blockWallContact = transition.blockWallTermination;
     stalled = transition.stalled;
     if (transition.done) {
       actor.inputBuffer().set(observation, 0);
@@ -326,6 +328,7 @@ export function recordPolicyRollout(actor, env, {
     return: totalReturn,
     success,
     wallContact,
+    blockWallContact,
     stalled,
     coverage,
     squashed: actor.actionSquash !== "clip",

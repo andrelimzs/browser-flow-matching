@@ -290,9 +290,11 @@ function selectRollout(index) {
     ? "Complete"
     : rollout.wallContact
       ? "Wall contact"
-      : rollout.stalled
-        ? "No movement"
-        : "Timed out";
+      : rollout.blockWallContact
+        ? "Block wall"
+        : rollout.stalled
+          ? "No movement"
+          : "Timed out";
   $("#rolloutReturnLabel").textContent = `return ${formatReturn(rollout.return)}`;
   $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
   $("#rolloutPill").dataset.active = "record";
@@ -315,6 +317,7 @@ function addRollout(message) {
     return: message.return,
     success: message.success,
     wallContact: message.wallContact,
+    blockWallContact: message.blockWallContact,
     stalled: message.stalled,
     coverage: message.coverage,
     count: message.count,
