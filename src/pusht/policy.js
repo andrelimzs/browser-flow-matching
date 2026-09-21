@@ -142,14 +142,24 @@ export function buildDataset(episodes, { observationSize, includeFailures = fals
 }
 
 export class PolicyTrainer {
-  constructor({ policy, batch = 256, learningRate = 0.002, random = Math.random }) {
+  constructor({
+    policy,
+    batch = 256,
+    learningRate = 0.002,
+    random = Math.random,
+    stateNoise = 0,
+    actionNoise = 0,
+  }) {
     this.policy = policy;
     this.batch = batch;
     this.random = random;
+    this.stateNoise = stateNoise;
+    this.actionNoise = actionNoise;
     this.optimizer = new Adam(policy.model.params, { learningRate });
     this.trainer = new FlowTrainer({ model: policy.model, optimizer: this.optimizer });
     this.targets = new Float32Array(batch * CHUNK_WIDTH);
     this.noisy = new Float32Array(CHUNK_WIDTH);
+    this.conditioning = new Float32Array(batch * policy.observationSize);
     this.steps = 0;
   }
 
@@ -158,7 +168,7 @@ export class PolicyTrainer {
   }
 
   step(dataset) {
-    const { policy, batch, targets } = this;
+    const { policy, batch, targets, conditioning } = this;
     const input = policy.model.inputBuffer();
     const width = dataset.observationSize;
 
@@ -166,13 +176,23 @@ export class PolicyTrainer {
       const row = Math.floor(this.random() * dataset.count);
       const time = sampleTime(this.random);
       const chunkOffset = row * CHUNK_WIDTH;
+      const observationOffset = row * width;
+      const noisyObservationOffset = sample * width;
+      for (let index = 0; index < width; index++) {
+        const value = dataset.observations[observationOffset + index] + this.gaussian() * this.stateNoise;
+        conditioning[noisyObservationOffset + index] = Math.max(-1, Math.min(1, value));
+      }
       for (let index = 0; index < CHUNK_WIDTH; index++) {
         const source = this.gaussian();
-        const target = dataset.chunks[chunkOffset + index];
+        const channel = index % ACTION_DIM;
+        const clean = dataset.chunks[chunkOffset + index];
+        const target = channel < 2
+          ? Math.max(0, Math.min(1, clean + this.gaussian() * this.actionNoise))
+          : clean;
         this.noisy[index] = source * (1 - time) + target * time;
         targets[sample * CHUNK_WIDTH + index] = target - source;
       }
-      policy.encode(this.noisy, 0, dataset.observations, row * width, time, input, sample * policy.encoder.size);
+      policy.encode(this.noisy, 0, conditioning, noisyObservationOffset, time, input, sample * policy.encoder.size);
     }
 
     this.steps += 1;

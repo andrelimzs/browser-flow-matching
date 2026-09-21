@@ -61,6 +61,24 @@
               <div id="teleopHint" class="teleop-hint" hidden>Move the cursor to steer the pusher</div>
             </div>
 
+            <div class="noise-controls" aria-label="Training noise">
+              <p class="label">Training noise</p>
+              <label>
+                <span>State σ</span>
+                <span class="noise-range">
+                  <input id="stateNoiseRange" type="range" min="0" max="0.1" step="0.005" value="0.02" />
+                  <output id="stateNoiseOutput">0.020</output>
+                </span>
+              </label>
+              <label>
+                <span>Action x/y σ</span>
+                <span class="noise-range">
+                  <input id="actionNoiseRange" type="range" min="0" max="0.03" step="0.001" value="0.005" />
+                  <output id="actionNoiseOutput">0.005</output>
+                </span>
+              </label>
+            </div>
+
             <div class="legend">
               <span><i class="dot"></i> Pusher</span>
               <span><i class="dot dot-lifted"></i> Lifted</span>

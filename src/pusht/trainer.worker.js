@@ -7,7 +7,7 @@
 import { buildDataset, makePolicy, PolicyTrainer } from "./policy.js";
 
 self.onmessage = (event) => {
-  const { episodes, steps, width, learningRate } = event.data;
+  const { episodes, steps, width, learningRate, stateNoise = 0, actionNoise = 0 } = event.data;
 
   const dataset = buildDataset(episodes);
   if (!dataset || dataset.count < 64) {
@@ -21,7 +21,7 @@ self.onmessage = (event) => {
     maxBatch: 256,
     random: Math.random,
   });
-  const trainer = new PolicyTrainer({ policy, batch: 256, learningRate });
+  const trainer = new PolicyTrainer({ policy, batch: 256, learningRate, stateNoise, actionNoise });
 
   // Everything the page needs to build a matching policy, before any weights
   // arrive, so it can adopt the first snapshot immediately.
@@ -32,6 +32,8 @@ self.onmessage = (event) => {
     observationSize: dataset.observationSize,
     sizes: policy.model.sizes,
     scales: Array.from(dataset.scales),
+    stateNoise,
+    actionNoise,
     params: policy.model.params.reduce((total, buffer) => total + buffer.length, 0),
   });
 

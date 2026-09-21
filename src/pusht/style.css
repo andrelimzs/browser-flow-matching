@@ -89,6 +89,13 @@ button { color: inherit; }
 .canvas-action:hover { transform: translateY(-2px); background: #fff; }
 .teleop-hint { position: absolute; bottom: 13px; left: 13px; font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: rgba(251,250,246,.9); border: 1px solid var(--line); padding: 8px 11px; pointer-events: none; }
 
+.noise-controls { display: grid; grid-template-columns: auto minmax(180px, 1fr) minmax(180px, 1fr); align-items: center; gap: 18px; margin-top: 15px; padding: 13px 15px; border: 1px solid var(--line); color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.noise-controls .label { margin: 0; white-space: nowrap; }
+.noise-controls label { display: grid; grid-template-columns: auto minmax(110px, 1fr); align-items: center; gap: 10px; }
+.noise-range { display: grid; grid-template-columns: minmax(90px, 1fr) 44px; align-items: center; gap: 8px; }
+.noise-range output { color: var(--ink); text-align: right; }
+.noise-range input:disabled { opacity: .45; cursor: not-allowed; }
+
 .legend { border-top: 1px solid var(--line); margin-top: 15px; padding-top: 15px; display: flex; flex-wrap: wrap; gap: 22px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
 .legend span { display: flex; align-items: center; gap: 7px; }
 .legend i { display: inline-block; }
@@ -155,6 +162,11 @@ button { color: inherit; }
   .intro { grid-template-columns: 1fr; gap: 26px; }
   .intro-copy { margin-left: 0; }
   .workspace { grid-template-columns: 1fr; }
+  .noise-controls { grid-template-columns: auto 1fr 1fr; }
+}
+
+@media (max-width: 680px) {
+  .noise-controls { grid-template-columns: 1fr; gap: 10px; }
 }
 
 /* Demo viewer */

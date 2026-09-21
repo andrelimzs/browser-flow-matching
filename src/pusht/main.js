@@ -64,6 +64,8 @@ const state = {
   flowHold: 0,
   lift: 0,
   trainSteps: 4000,
+  stateNoise: 0.02,
+  actionNoise: 0.005,
   training: false,
   lossHistory: [],
 };
@@ -297,7 +299,9 @@ function startTraining() {
     if (data.type === "started") {
       // Build the policy up front so the first weight snapshot can go straight in.
       preparePolicy(data);
-      $("#trainStatus").textContent = `${data.episodes} episodes · ${data.transitions.toLocaleString()} transitions · ${data.params.toLocaleString()} params`;
+      $("#trainStatus").textContent =
+        `${data.episodes} episodes · ${data.transitions.toLocaleString()} transitions · ` +
+        `noise ${data.stateNoise.toFixed(3)} / ${data.actionNoise.toFixed(3)}`;
     } else if (data.type === "weights") {
       adoptWeights(data.weights);
     } else if (data.type === "progress") {
@@ -327,7 +331,14 @@ function startTraining() {
       setStatus(data.message);
     }
   };
-  worker.postMessage({ episodes: solved, steps: state.trainSteps, width: 128, learningRate: 0.002 });
+  worker.postMessage({
+    episodes: solved,
+    steps: state.trainSteps,
+    width: 128,
+    learningRate: 0.002,
+    stateNoise: state.stateNoise,
+    actionNoise: state.actionNoise,
+  });
   setStatus("Training in a background worker — the page stays interactive.");
   syncUI();
 }
@@ -444,6 +455,8 @@ function syncUI() {
   $("#clearPolicyButton").disabled = state.training || !state.policyReady;
   $("#stopTrainButton").disabled = !state.training;
   $("#recordButton").disabled = state.training || state.mode === "policy";
+  $("#stateNoiseRange").disabled = state.training;
+  $("#actionNoiseRange").disabled = state.training;
   $("#teleopHint").hidden = state.mode !== "teleop";
   $(".canvas-shell").dataset.teleop = String(state.mode === "teleop");
 
@@ -612,6 +625,16 @@ for (const button of document.querySelectorAll("[data-steps]")) {
     }
   });
 }
+
+$("#stateNoiseRange").addEventListener("input", (event) => {
+  state.stateNoise = Number(event.target.value);
+  $("#stateNoiseOutput").textContent = state.stateNoise.toFixed(3);
+});
+
+$("#actionNoiseRange").addEventListener("input", (event) => {
+  state.actionNoise = Number(event.target.value);
+  $("#actionNoiseOutput").textContent = state.actionNoise.toFixed(3);
+});
 
 const arena = $("#arena");
 arena.addEventListener("pointermove", (event) => {
