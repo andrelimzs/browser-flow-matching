@@ -9,15 +9,13 @@ self.onmessage = ({ data }) => {
 
   const { algorithm, totalSteps, width, horizon, entropyBonus, seed } = data;
   const env = new PushTRLEnv({ seed, horizon });
-  const ppoEnvs = Array.from({ length: 4 }, (_, index) =>
-    index === 0 ? env : new PushTRLEnv({ seed: seed + index, horizon }));
   const random = createRandom(seed + 20_000);
 
-  const onProgress = (progress, models) => {
+  const logRollout = (progress, models) => {
     const evaluationEnv = new PushTRLEnv({ seed: seed + 10_000, horizon });
     const rollout = recordPolicyRollout(models.actor, evaluationEnv, {
       random: createRandom(seed + 30_000),
-      deterministic: false,
+      deterministic: true,
     });
     self.postMessage({
       type: "rollout",
@@ -38,18 +36,19 @@ self.onmessage = ({ data }) => {
         batchSize: 256,
         progressEvery: 200,
         random,
-        onProgress,
+        onProgress: logRollout,
       });
     } else {
       trainPPO({
-        envs: ppoEnvs,
+        env,
         totalSteps,
         width,
         entropyCoefficient: entropyBonus,
-        rolloutSteps: 200,
-        batchSize: 128,
+        rolloutSteps: 2048,
+        batchSize: 64,
+        progressEvery: 200,
         random,
-        onProgress,
+        onCheckpoint: logRollout,
       });
     }
     self.postMessage({ type: "done" });

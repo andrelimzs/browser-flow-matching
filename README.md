@@ -108,10 +108,10 @@ waiting earns zero. Orientation error is divided by π, bounding its net shaping
 At success or timeout, the final shape-overlap coverage is added as a closeness reward. Completion counts
 remain explicit in the CLI output.
 
-The browser trainer collects PPO experience from four independent environment streams, batches policy
-and value inference across them, and updates from minibatches of 128 transitions. SAC samples replay
-minibatches of 256 transitions. Checkpoint rollouts and return measurements remain spaced every 200
-environment transitions.
+The browser trainer follows CleanRL's continuous-control collection defaults: PPO uses one environment,
+2,048 steps per rollout, 32 minibatches of 64, and 10 update epochs; SAC uses one environment, replay
+minibatches of 256, and 5,000 warmup steps. Checkpoint rollouts and return measurements remain spaced
+every 200 environment transitions, independently of PPO's update cadence.
 
 ## Multimodality
 

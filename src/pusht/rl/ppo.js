@@ -29,7 +29,9 @@ export function trainPPO({
   clipRatio = 0.2,
   entropyCoefficient = 0.02,
   actorLearningRate = 3e-4,
-  criticLearningRate = 1e-3,
+  criticLearningRate = 3e-4,
+  progressEvery = 0,
+  onCheckpoint = () => {},
   onProgress = () => {},
 } = {}) {
   const environments = envs ?? (env ? [env] : []);
@@ -66,6 +68,7 @@ export function trainPPO({
   let steps = 0;
   let episodes = 0;
   let successes = 0;
+  let nextCheckpoint = progressEvery > 0 ? progressEvery : Infinity;
 
   while (steps < totalSteps) {
     const count = Math.min(rolloutSteps, totalSteps - steps);
@@ -116,6 +119,17 @@ export function trainPPO({
         }
       }
       cursor += active;
+      const collectedSteps = steps + cursor;
+      while (collectedSteps >= nextCheckpoint) {
+        onCheckpoint({
+          algorithm: "ppo",
+          steps: nextCheckpoint,
+          episodes,
+          successes,
+          rolloutSuccesses,
+        }, { actor, critic });
+        nextCheckpoint += progressEvery;
+      }
     }
 
     for (let environment = 0; environment < environmentCount; environment++) {

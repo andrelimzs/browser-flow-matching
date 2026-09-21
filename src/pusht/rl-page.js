@@ -18,7 +18,7 @@ const state = {
   budget: 100_000,
   horizon: 200,
   entropyByAlgorithm: { ppo: 0.02, sac: 0.3 },
-  width: 128,
+  widthByAlgorithm: { ppo: 64, sac: 256 },
   seed: 2026,
   worker: null,
   training: false,
@@ -75,6 +75,15 @@ function updateEntropyControl() {
   $("#entropyOutput").textContent = state.entropyByAlgorithm[state.algorithm].toFixed(config.digits);
   $("#entropyMin").textContent = String(config.min);
   $("#entropyMax").textContent = config.max.toFixed(config.digits === 3 ? 2 : 1);
+}
+
+function updateWidthControl() {
+  document.querySelectorAll("[data-width]").forEach((button) => {
+    button.setAttribute(
+      "aria-pressed",
+      String(Number(button.dataset.width) === state.widthByAlgorithm[state.algorithm]),
+    );
+  });
 }
 
 function drawReturnChart() {
@@ -249,7 +258,7 @@ function startTraining() {
     type: "start",
     algorithm: state.algorithm,
     totalSteps: state.budget,
-    width: state.width,
+    width: state.widthByAlgorithm[state.algorithm],
     horizon: state.horizon,
     entropyBonus: state.entropyByAlgorithm[state.algorithm],
     seed: state.seed,
@@ -318,7 +327,7 @@ function registerWebMcpTools() {
         algorithm: { type: "string", enum: ["ppo", "sac"] },
         budget: { type: "integer", minimum: BUDGET_MIN, maximum: BUDGET_MAX },
         horizon: { type: "integer", minimum: 200, maximum: 1000, multipleOf: 100 },
-        width: { type: "integer", enum: [64, 128] },
+        width: { type: "integer", enum: [64, 128, 256] },
         entropyBonus: { type: "number", minimum: 0, maximum: 0.5 },
       },
       required: ["algorithm", "budget", "horizon", "width", "entropyBonus"],
@@ -334,7 +343,7 @@ function registerWebMcpTools() {
       if (!Number.isInteger(input.horizon) || input.horizon < 200 || input.horizon > 1000 || input.horizon % 100) {
         throw new RangeError("Horizon must be a multiple of 100 from 200 through 1000.");
       }
-      if (![64, 128].includes(input.width)) throw new RangeError("Width must be 64 or 128.");
+      if (![64, 128, 256].includes(input.width)) throw new RangeError("Width must be 64, 128, or 256.");
       const entropyConfig = entropyConfigs[input.algorithm];
       if (typeof input.entropyBonus !== "number" || !Number.isFinite(input.entropyBonus) ||
         input.entropyBonus < entropyConfig.min || input.entropyBonus > entropyConfig.max) {
@@ -345,14 +354,12 @@ function registerWebMcpTools() {
       state.algorithm = input.algorithm;
       state.budget = input.budget;
       state.horizon = input.horizon;
-      state.width = input.width;
+      state.widthByAlgorithm[state.algorithm] = input.width;
       state.entropyByAlgorithm[state.algorithm] = input.entropyBonus;
       document.querySelectorAll("[data-algorithm]").forEach((button) => {
         button.setAttribute("aria-pressed", String(button.dataset.algorithm === state.algorithm));
       });
-      document.querySelectorAll("[data-width]").forEach((button) => {
-        button.setAttribute("aria-pressed", String(Number(button.dataset.width) === state.width));
-      });
+      updateWidthControl();
       $("#budgetSlider").value = String(Math.log10(state.budget));
       $("#budgetOutput").textContent = formatBudget(state.budget);
       $("#horizonSlider").value = String(state.horizon);
@@ -376,6 +383,7 @@ function registerWebMcpTools() {
         algorithm: state.algorithm,
         budget: state.budget,
         horizon: state.horizon,
+        width: state.widthByAlgorithm[state.algorithm],
         entropyBonus: state.entropyByAlgorithm[state.algorithm],
         loggedRollouts: state.rollouts.length,
         latestStep: state.rollouts.at(-1)?.step ?? 0,
@@ -412,15 +420,14 @@ document.querySelectorAll("[data-algorithm]").forEach((button) => {
       option.setAttribute("aria-pressed", String(option === button));
     });
     updateEntropyControl();
+    updateWidthControl();
   });
 });
 
 document.querySelectorAll("[data-width]").forEach((button) => {
   button.addEventListener("click", () => {
-    state.width = Number(button.dataset.width);
-    document.querySelectorAll("[data-width]").forEach((option) => {
-      option.setAttribute("aria-pressed", String(option === button));
-    });
+    state.widthByAlgorithm[state.algorithm] = Number(button.dataset.width);
+    updateWidthControl();
   });
 });
 
@@ -450,5 +457,6 @@ window.addEventListener("beforeunload", () => {
 });
 
 updateEntropyControl();
+updateWidthControl();
 resetRun();
 requestAnimationFrame(draw);

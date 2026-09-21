@@ -124,17 +124,24 @@ if (worst > 2e-4) throw new Error(`critic input-gradient mismatch ${worst}`);
 // Short algorithm smoke runs catch non-finite losses, buffer mistakes and SAC's
 // actor-through-critic gradient wiring. They are not expected to solve the task
 // in a few hundred interactions.
+let ppoCheckpoints = 0;
 const ppo = trainPPO({
-  envs: Array.from({ length: 4 }, (_, index) => new PushTRLEnv({ seed: 20 + index, horizon: 80 })),
+  env: new PushTRLEnv({ seed: 20, horizon: 80 }),
   random: createRandom(21),
   totalSteps: 256,
   rolloutSteps: 128,
   epochs: 1,
-  batchSize: 64,
+  batchSize: 32,
   width: 16,
+  progressEvery: 200,
+  onCheckpoint(progress) {
+    if (progress.steps !== 200) throw new Error(`unexpected PPO checkpoint ${progress.steps}`);
+    ppoCheckpoints += 1;
+  },
 });
-console.log(`PPO smoke: ${ppo.steps} steps across 4 envs, finite ${finiteModel(ppo.actor) && finiteModel(ppo.critic)}`);
+console.log(`PPO smoke: ${ppo.steps} steps, finite ${finiteModel(ppo.actor) && finiteModel(ppo.critic)}`);
 if (!finiteModel(ppo.actor) || !finiteModel(ppo.critic)) throw new Error("PPO produced non-finite parameters");
+if (ppoCheckpoints !== 1) throw new Error(`expected one PPO checkpoint, got ${ppoCheckpoints}`);
 const recordedRollout = recordPolicyRollout(ppo.actor, new PushTRLEnv({ seed: 22, horizon: 80 }));
 console.log(`recorded rollout: ${recordedRollout.count} frames, ${recordedRollout.frames.length} values`);
 if (recordedRollout.frames.length !== recordedRollout.count * 10 || !recordedRollout.frames.every(Number.isFinite)) {

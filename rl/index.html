@@ -52,7 +52,7 @@
               <div class="canvas-label canvas-label-target"><span id="rolloutReturnLabel">return —</span></div>
               <div class="rollout-empty" id="rolloutEmpty">
                 <strong>No rollouts logged yet</strong>
-                <span>Start training to capture a reproducible sampled rollout every 200 steps.</span>
+                <span>Start training to capture a deterministic rollout every 200 steps.</span>
               </div>
             </div>
 
@@ -113,8 +113,9 @@
             <div class="solver-setting">
               <span>Network width</span>
               <div class="step-options" role="group" aria-label="Network width">
-                <button type="button" data-width="64" aria-pressed="false">64</button>
-                <button type="button" data-width="128" aria-pressed="true">128</button>
+                <button type="button" data-width="64" aria-pressed="true">64</button>
+                <button type="button" data-width="128" aria-pressed="false">128</button>
+                <button type="button" data-width="256" aria-pressed="false">256</button>
               </div>
             </div>
 
