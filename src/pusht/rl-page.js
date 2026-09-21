@@ -426,10 +426,6 @@ function addRollout(message) {
   slider.disabled = false;
   slider.max = String(state.rollouts.length - 1);
   $("#rolloutEmpty").hidden = true;
-  $("#stepsMetric").textContent = message.progress.steps.toLocaleString();
-  $("#episodesMetric").textContent = message.progress.episodes.toLocaleString();
-  $("#successMetric").textContent = message.progress.successes.toLocaleString();
-  $("#rolloutMetric").textContent = state.rollouts.length.toLocaleString();
   $("#latestReturn").textContent = formatReturn(message.return);
   if (state.selected < 0) selectRollout(0);
   else {
@@ -464,10 +460,6 @@ function resetRun() {
   $("#valuePlotTitle").textContent = "Estimated remaining return V(s)";
   $("#rolloutStatus").textContent = "Awaiting training";
   $("#latestReturn").textContent = "—";
-  $("#stepsMetric").textContent = "0";
-  $("#episodesMetric").textContent = "0";
-  $("#successMetric").textContent = "0";
-  $("#rolloutMetric").textContent = "0";
   drawReturnChart();
   drawRolloutValueChart();
 }
