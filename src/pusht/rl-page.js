@@ -180,7 +180,7 @@ function drawReturnChart() {
     return;
   }
 
-  const padding = { left: 10, right: 10, top: 12, bottom: 14 };
+  const padding = { left: 10, right: 10, top: 12, bottom: 24 };
   const values = state.rollouts.map((rollout) => rollout.return);
   const trainValues = state.rollouts.map((rollout) => rollout.trainReturn);
   const evaluationSma = simpleMovingAverage(values, RETURN_SMA_WINDOW);
@@ -235,6 +235,10 @@ function drawReturnChart() {
       context.fill();
     }
   }
+  context.fillStyle = "#8a8f89";
+  context.font = '9px "DM Mono", monospace';
+  context.textAlign = "center";
+  context.fillText("training step", rect.width / 2, rect.height - 7);
 }
 
 function drawEvaluationMetricsChart() {
@@ -247,7 +251,7 @@ function drawEvaluationMetricsChart() {
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
   context.clearRect(0, 0, rect.width, rect.height);
 
-  const padding = { left: 35, right: 35, top: 12, bottom: 14 };
+  const padding = { left: 35, right: 35, top: 12, bottom: 24 };
   const plotWidth = Math.max(1, rect.width - padding.left - padding.right);
   const plotHeight = Math.max(1, rect.height - padding.top - padding.bottom);
   context.strokeStyle = "rgba(25, 28, 27, .08)";
@@ -312,6 +316,10 @@ function drawEvaluationMetricsChart() {
     context.fillStyle = "#8a5ac2";
     context.fill();
   }
+  context.fillStyle = "#8a8f89";
+  context.font = '9px "DM Mono", monospace';
+  context.textAlign = "center";
+  context.fillText("training step", rect.width / 2, rect.height - 7);
 }
 
 function drawRolloutValueChart() {
