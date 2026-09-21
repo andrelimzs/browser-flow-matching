@@ -25,13 +25,6 @@
 .rl-setting > div:first-child { display: flex; justify-content: space-between; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
 .rl-setting output { color: var(--ink); }
 .range-ends { display: flex; justify-content: space-between; color: #949993; font-family: "DM Mono", monospace; font-size: 9px; }
-.reward-definition { display: grid; gap: 0; margin-top: 20px; padding: 15px; border: 1px solid var(--line); background: rgba(244,242,236,.72); }
-.reward-definition .label { margin: 0 0 9px; color: var(--muted); }
-.reward-definition code { display: block; margin-bottom: 11px; color: var(--blue); font-family: "DM Mono", monospace; font-size: 15px; }
-.reward-definition > div { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 11px; }
-.reward-definition > div span { color: var(--muted); }
-.reward-definition > div strong { text-align: right; font-weight: 600; }
-.reward-definition > p:last-child { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .return-panel { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
 .return-heading { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 10px; }
 .return-heading .label { margin-bottom: 5px; color: var(--muted); }

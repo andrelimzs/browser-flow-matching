@@ -7,16 +7,18 @@ import { trainSAC } from "../src/pusht/rl/sac.js";
 
 const finiteModel = (model) => model.params.every((buffer) => buffer.every(Number.isFinite));
 
-// Environment contract and potential-based shaping: distance rewards telescope
-// to the net reduction in block-goal distance, plus exactly one on completion.
+// Environment contract: position and orientation progress telescope to their
+// net reductions, with exactly one additional reward on completion.
 const env = new PushTRLEnv({ seed: 10, horizon: 2200 });
 let observation = env.reset();
 const initialDistance = env.distance;
+const initialOrientationError = env.orientationError;
 if (observation.length !== RL_OBSERVATION_SIZE || RL_ACTION_SIZE !== 2) throw new Error("wrong RL shape");
 const expert = new ScriptedExpert({ random: createRandom(11), tieBreak: "cw" });
 const action = new Float32Array(2);
 let completionRewards = 0;
 let distanceReward = 0;
+let orientationReward = 0;
 let totalReward = 0;
 let solved = false;
 for (let step = 0; step < 2200; step++) {
@@ -27,17 +29,34 @@ for (let step = 0; step < 2200; step++) {
   observation = transition.observation;
   completionRewards += transition.completionReward;
   distanceReward += transition.distanceProgress;
+  orientationReward += transition.orientationProgress;
   totalReward += transition.reward;
   if (transition.done) { solved = transition.success; break; }
 }
 const expectedDistanceReward = initialDistance - env.distance;
+const expectedOrientationReward = initialOrientationError - env.orientationError;
 console.log(
   `environment: obs ${observation.length}, action ${RL_ACTION_SIZE}, solved ${solved}, ` +
-  `completion ${completionRewards}, distance reward ${distanceReward.toFixed(4)}, total ${totalReward.toFixed(4)}`,
+  `completion ${completionRewards}, distance reward ${distanceReward.toFixed(4)}, ` +
+  `orientation reward ${orientationReward.toFixed(4)}, total ${totalReward.toFixed(4)}`,
 );
 if (!solved || completionRewards !== 1) throw new Error("completion reward is wrong");
 if (Math.abs(distanceReward - expectedDistanceReward) > 1e-6) throw new Error("distance shaping does not telescope");
-if (Math.abs(totalReward - (1 + expectedDistanceReward)) > 1e-6) throw new Error("combined reward is wrong");
+if (Math.abs(orientationReward - expectedOrientationReward) > 1e-6) throw new Error("orientation shaping does not telescope");
+if (Math.abs(totalReward - (1 + expectedDistanceReward + expectedOrientationReward)) > 1e-6) {
+  throw new Error("combined reward is wrong");
+}
+
+const orientationEnv = new PushTRLEnv({ seed: 14, horizon: 100 });
+orientationEnv.reset();
+orientationEnv.world.block.angle = Math.PI;
+orientationEnv.orientationError = orientationEnv.blockGoalOrientationError();
+orientationEnv.world.block.angle = Math.PI / 2;
+const orientationTransition = orientationEnv.step(Float32Array.of(0, 0));
+console.log(`orientation progress: ${orientationTransition.orientationProgress.toFixed(4)}`);
+if (Math.abs(orientationTransition.orientationProgress - 0.5) > 1e-6) {
+  throw new Error("orientation shaping is not normalized angular progress");
+}
 
 // Touching any outer wall is an immediate terminal failure with an exact -1
 // reward, regardless of the ordinary distance-shaping term.

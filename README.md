@@ -98,12 +98,13 @@ Gaussian actor. Both deliberately use the same minimal task definition:
 
 - observation: one normalized 11-value simulator frame, with no history or frame stack
 - action: normalized `dx, dy` in `[-1, 1]`, scaled to one `0.017` pusher step
-- reward: change in block-to-goal center distance (`previous - current`), `+1` on completion, or `-1` and termination when the pusher touches the outer wall
+- reward: progress in block-to-goal center distance plus progress in normalized orientation error, `+1` on completion, or `-1` and termination when the pusher touches the outer wall
 - episode horizon: 600 steps by default
 
 Training is seeded and runs in Node. Set `OUT=policy.json` to save the actor and its evaluation metadata.
-Distance shaping is potential-based: progress earns a small positive reward, moving away earns the matching
-negative reward, and waiting earns zero. Completion counts remain explicit in the CLI output.
+Position and orientation progress earn positive reward, regress earns the matching negative reward, and
+waiting earns zero. Orientation error is divided by π, bounding its net shaping range to `[-1, 1]`.
+Completion counts remain explicit in the CLI output.
 
 ## Multimodality
 
