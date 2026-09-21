@@ -16,6 +16,7 @@ const REWARD_COMPONENTS = [
   "pusherWall",
   "blockWall",
   "inactivity",
+  "stepPenalty",
 ];
 const entropyConfigs = {
   ppo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
@@ -37,6 +38,7 @@ const state = {
     pusherWall: false,
     blockWall: false,
     inactivity: true,
+    stepPenalty: true,
   },
   entropyByAlgorithm: { ppo: 0, sac: 0.3 },
   widthByAlgorithm: { ppo: 64, sac: 256 },
@@ -489,6 +491,7 @@ function registerWebMcpTools() {
             pusherWall: { type: "boolean" },
             blockWall: { type: "boolean" },
             inactivity: { type: "boolean" },
+            stepPenalty: { type: "boolean" },
           },
           required: REWARD_COMPONENTS,
           additionalProperties: false,

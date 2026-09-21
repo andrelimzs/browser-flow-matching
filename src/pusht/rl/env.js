@@ -83,6 +83,7 @@ export class PushTRLEnv {
       pusherWall: rewardShaping.pusherWall ?? false,
       blockWall: rewardShaping.blockWall ?? false,
       inactivity: rewardShaping.inactivity ?? true,
+      stepPenalty: rewardShaping.stepPenalty ?? true,
     };
     this.curriculum = curriculum;
     this.trainingProgress = 0;
@@ -234,13 +235,14 @@ export class PushTRLEnv {
     const wallPenalty = wallContact && this.rewardShaping.pusherWall ? -1 : 0;
     const blockWallPenalty = blockWallContact && this.rewardShaping.blockWall ? -10 : 0;
     const inactivityPenalty = stalled && this.rewardShaping.inactivity ? -1 : 0;
+    const stepPenalty = this.rewardShaping.stepPenalty ? -0.01 : 0;
     const truncated = !success && !wallContact && !stalled && this.episodeSteps >= this.horizon;
     const done = success || wallContact || stalled || truncated;
     const finalClosenessReward = done && !wallContact && !stalled && this.rewardShaping.closeness
       ? Math.exp(-distance) + Math.exp(-orientationError)
       : 0;
     const reward = completionReward + finalClosenessReward + wallPenalty + blockWallPenalty +
-      inactivityPenalty +
+      inactivityPenalty + stepPenalty +
       (this.rewardShaping.blockDistance ? distanceShapingReward : 0) +
       (this.rewardShaping.pusherDistance ? pusherDistanceShapingReward : 0) +
       (this.rewardShaping.orientation ? orientationShapingReward : 0);
@@ -253,6 +255,7 @@ export class PushTRLEnv {
       wallPenalty,
       blockWallPenalty,
       inactivityPenalty,
+      stepPenalty,
       distanceProgress,
       distanceShapingReward,
       distance,
