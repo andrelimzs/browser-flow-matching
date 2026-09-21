@@ -6,9 +6,9 @@
 // the demonstrations.
 
 const STORAGE_KEY = "pusht-policy-v1";
-// Version 6 returns to absolute [0, 1] actions, normalizes absolute states to
-// [-1, 1], and fixes the zero-obstacle start/goal configuration.
-const VERSION = 6;
+// Version 7 restores delta xy chunks while retaining normalized absolute state
+// inputs and the fixed zero-obstacle configuration.
+const VERSION = 7;
 
 function toBase64(values) {
   const bytes = new Uint8Array(values.buffer, values.byteOffset, values.byteLength);

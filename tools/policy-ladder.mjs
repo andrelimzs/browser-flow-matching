@@ -8,7 +8,8 @@
 // Each rung must pass before the next one means anything.
 import { PushWorld, createRandom, SUCCESS_COVERAGE } from "../src/pusht/sim.js";
 import { ScriptedExpert } from "../src/pusht/expert.js";
-import { buildDataset, normalizeObservation, CHUNK, CHUNK_WIDTH, ACTION_DIM } from "../src/pusht/policy.js";
+import { buildDataset, normalizeObservation, intoBlockFrame, outOfBlockFrame,
+         CHUNK, CHUNK_WIDTH, ACTION_DIM } from "../src/pusht/policy.js";
 import { MLP } from "../src/flow/mlp.js";
 import { Adam } from "../src/flow/adam.js";
 
@@ -75,14 +76,24 @@ rollout(solved.slice(0, 40), (w, ep, s) => {
   return chunk;
 }, "rung 0: expert actions, replayed");
 
-// rung 1: same absolute actions through the chunk layout inference uses.
+// rung 1: same actions round-tripped through delta encoding and decoding.
 rollout(solved.slice(0, 40), (w, ep, s) => {
+  const raw = w.writeObservation();
+  const encodedAt = ep.observations[Math.min(ep.observations.length - 1, s)];
   const chunk = new Float32Array(CHUNK_WIDTH);
+  let previousX = encodedAt[0], previousY = encodedAt[1];
+  let targetX = raw[0], targetY = raw[1];
   for (let k = 0; k < CHUNK; k++) {
     const a = ep.actions[Math.min(ep.actions.length - 1, s + k)];
-    chunk[k * ACTION_DIM] = a[0];
-    chunk[k * ACTION_DIM + 1] = a[1];
+    const [dx, dy] = intoBlockFrame(a[0] - previousX, a[1] - previousY, encodedAt[4], encodedAt[5]);
+    const [bx, by] = outOfBlockFrame(dx, dy, raw[4], raw[5]);
+    targetX += bx;
+    targetY += by;
+    chunk[k * ACTION_DIM] = targetX;
+    chunk[k * ACTION_DIM + 1] = targetY;
     chunk[k * ACTION_DIM + 2] = a[2];
+    previousX = a[0];
+    previousY = a[1];
   }
   return chunk;
 }, "rung 1: via chunk encode/decode");
@@ -117,11 +128,15 @@ function trainMSE(episodes, steps) {
     model.forward(1);
     const o = model.outputs(1);
     const chunk = new Float32Array(CHUNK_WIDTH);
+    let targetX = raw[0], targetY = raw[1];
     for (let k = 0; k < CHUNK; k++) {
       const scale = ds.scales[k];
-      chunk[k * ACTION_DIM] = o[k * ACTION_DIM] * scale;
-      chunk[k * ACTION_DIM + 1] = o[k * ACTION_DIM + 1] * scale;
-      chunk[k * ACTION_DIM + 2] = o[k * ACTION_DIM + 2] > 0.5 ? 1 : 0;
+      const [dx, dy] = outOfBlockFrame(o[k * ACTION_DIM] * scale, o[k * ACTION_DIM + 1] * scale, raw[4], raw[5]);
+      targetX += dx;
+      targetY += dy;
+      chunk[k * ACTION_DIM] = targetX;
+      chunk[k * ACTION_DIM + 1] = targetY;
+      chunk[k * ACTION_DIM + 2] = o[k * ACTION_DIM + 2] > 0 ? 1 : 0;
     }
     return chunk;
   };

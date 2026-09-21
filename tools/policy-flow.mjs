@@ -13,8 +13,8 @@ const OBSTACLES = Number(process.env.OBSTACLES ?? 0);
 const EXECUTE = Number(process.env.EXECUTE ?? 16);
 const EULER = Number(process.env.EULER ?? 10);
 const CAP = 900;
-const LIFT_ON = Number(process.env.LIFT_ON ?? 0.65);
-const LIFT_OFF = Number(process.env.LIFT_OFF ?? 0.35);
+const LIFT_ON = Number(process.env.LIFT_ON ?? 0.4);
+const LIFT_OFF = Number(process.env.LIFT_OFF ?? -0.4);
 
 const random = createRandom(1717);
 const world = new PushWorld({ random, obstacleCount: OBSTACLES });

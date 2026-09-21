@@ -32,9 +32,10 @@ export const CHUNK = 32;
 export const ACTION_DIM = 3;
 export const CHUNK_WIDTH = CHUNK * ACTION_DIM;
 
-// The policy predicts the simulator action directly in [0, 1]: absolute world
-// x/y plus binary lift. It is never made relative to the pusher or differenced.
-export const ACTION_SCALE = 1;
+// XY actions are first differences: the first target is relative to the current
+// pusher and later targets are relative to the preceding command. Each chunk
+// position is normalized by its dataset RMS; lift uses -1/+1.
+export const DELTA_SCALE = 0.06;
 
 // Raw layout is 11 fixed values (pusher xy, block xy, block cos/sin, goal xy,
 // goal cos/sin, lifted) plus 3 per obstacle.
@@ -64,6 +65,14 @@ export function normalizeObservation(raw, out = new Float32Array(normalizedObser
     out[cursor++] = (raw[index + 2] - 0.05) * 20;
   }
   return out;
+}
+
+export function intoBlockFrame(dx, dy, cos, sin) {
+  return [dx * cos + dy * sin, -dx * sin + dy * cos];
+}
+
+export function outOfBlockFrame(dx, dy, cos, sin) {
+  return [dx * cos - dy * sin, dx * sin + dy * cos];
 }
 
 // Input is [chunk, observation, time]; only time gets a Fourier lift. The
@@ -124,19 +133,39 @@ export function buildDataset(episodes, { observationSize, includeFailures = fals
       const raw = episode.observations[index];
       normalizeObservation(raw, scratch);
       observations.set(scratch, cursor * width);
+      let previousX = raw[0];
+      let previousY = raw[1];
+      const cos = raw[4];
+      const sin = raw[5];
       for (let step = 0; step < CHUNK; step++) {
         const source = episode.actions[Math.min(length - 1, index + step)];
-        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM] = source[0];
-        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 1] = source[1];
-        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 2] = (source[2] ?? 0) > 0.5 ? 1 : 0;
+        const [dx, dy] = intoBlockFrame(source[0] - previousX, source[1] - previousY, cos, sin);
+        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM] = dx;
+        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 1] = dy;
+        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 2] = (source[2] ?? 0) > 0.5 ? 1 : -1;
+        previousX = source[0];
+        previousY = source[1];
       }
       cursor += 1;
     }
   }
 
-  // Kept with the cached model schema; every absolute coordinate uses the same
-  // fixed normalization and no dataset-dependent statistic.
-  const scales = new Float32Array(CHUNK).fill(ACTION_SCALE);
+  const scales = new Float32Array(CHUNK);
+  for (let step = 0; step < CHUNK; step++) {
+    let total = 0;
+    for (let row = 0; row < count; row++) {
+      const base = row * CHUNK_WIDTH + step * ACTION_DIM;
+      total += chunks[base] * chunks[base] + chunks[base + 1] * chunks[base + 1];
+    }
+    scales[step] = Math.max(1e-4, Math.sqrt(total / (count * 2)));
+  }
+  for (let row = 0; row < count; row++) {
+    for (let step = 0; step < CHUNK; step++) {
+      const base = row * CHUNK_WIDTH + step * ACTION_DIM;
+      chunks[base] /= scales[step];
+      chunks[base + 1] /= scales[step];
+    }
+  }
 
   return { observations, chunks, scales, count, observationSize: width, episodes: usable.length };
 }
@@ -186,8 +215,9 @@ export class PolicyTrainer {
         const source = this.gaussian();
         const channel = index % ACTION_DIM;
         const clean = dataset.chunks[chunkOffset + index];
+        const step = Math.floor(index / ACTION_DIM);
         const target = channel < 2
-          ? Math.max(0, Math.min(1, clean + this.gaussian() * this.actionNoise))
+          ? clean + this.gaussian() * this.actionNoise / dataset.scales[step]
           : clean;
         this.noisy[index] = source * (1 - time) + target * time;
         targets[sample * CHUNK_WIDTH + index] = target - source;
@@ -206,6 +236,10 @@ export class PolicyTrainer {
 // collapsed onto the chunks the policy considers plausible here, which is the
 // distribution the whole method exists to represent.
 export function createFlowSampler(policy, observation, { count = 12, steps = 10, random = Math.random, scales } = {}) {
+  const pusherX = observation[0];
+  const pusherY = observation[1];
+  const cos = observation[4];
+  const sin = observation[5];
   const conditioning = normalizeObservation(observation);
   const gaussian = () => Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
 
@@ -232,11 +266,16 @@ export function createFlowSampler(policy, observation, { count = 12, steps = 10,
   // integration, so partially-transported noise can be drawn too.
   function polyline(sample, out) {
     const points = out ?? new Float32Array(CHUNK * 2);
+    let targetX = pusherX;
+    let targetY = pusherY;
     for (let k = 0; k < CHUNK; k++) {
       const base = sample * CHUNK_WIDTH + k * ACTION_DIM;
-      const scale = scales ? scales[k] : ACTION_SCALE;
-      points[k * 2] = states[base] * scale;
-      points[k * 2 + 1] = states[base + 1] * scale;
+      const scale = scales ? scales[k] : DELTA_SCALE;
+      const [dx, dy] = outOfBlockFrame(states[base] * scale, states[base + 1] * scale, cos, sin);
+      targetX += dx;
+      targetY += dy;
+      points[k * 2] = targetX;
+      points[k * 2 + 1] = targetY;
     }
     return points;
   }
@@ -244,11 +283,16 @@ export function createFlowSampler(policy, observation, { count = 12, steps = 10,
   // The finished chunk for one candidate, in the form step() consumes.
   function chunk(sample) {
     const out = new Float32Array(CHUNK_WIDTH);
+    let targetX = pusherX;
+    let targetY = pusherY;
     for (let k = 0; k < CHUNK; k++) {
       const base = sample * CHUNK_WIDTH + k * ACTION_DIM;
-      const scale = scales ? scales[k] : ACTION_SCALE;
-      out[k * ACTION_DIM] = states[base] * scale;
-      out[k * ACTION_DIM + 1] = states[base + 1] * scale;
+      const scale = scales ? scales[k] : DELTA_SCALE;
+      const [dx, dy] = outOfBlockFrame(states[base] * scale, states[base + 1] * scale, cos, sin);
+      targetX += dx;
+      targetY += dy;
+      out[k * ACTION_DIM] = targetX;
+      out[k * ACTION_DIM + 1] = targetY;
       out[k * ACTION_DIM + 2] = states[base + 2];
     }
     return out;
@@ -261,6 +305,10 @@ export function createFlowSampler(policy, observation, { count = 12, steps = 10,
 // coordinates. `model` here is a single-sample copy so inference does not
 // disturb a training batch in flight.
 export function sampleChunk(policy, observation, { steps = 10, random = Math.random, out, scales } = {}) {
+  const pusherX = observation[0];
+  const pusherY = observation[1];
+  const cos = observation[4];
+  const sin = observation[5];
   const normalized = normalizeObservation(observation);
   const state = out ?? new Float32Array(CHUNK_WIDTH);
   const gaussian = () => Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
@@ -273,14 +321,16 @@ export function sampleChunk(policy, observation, { steps = 10, random = Math.ran
     const velocity = policy.model.forward(1);
     for (let index = 0; index < CHUNK_WIDTH; index++) state[index] += velocity[index] * delta;
   }
-  // Decode normalized values directly into absolute world-space targets.
+  let targetX = pusherX;
+  let targetY = pusherY;
   for (let step = 0; step < CHUNK; step++) {
-    const scale = scales ? scales[step] : ACTION_SCALE;
+    const scale = scales ? scales[step] : DELTA_SCALE;
     const base = step * ACTION_DIM;
-    state[base] *= scale;
-    state[base + 1] *= scale;
-    // Lift stays in the raw [0, 1] action convention; execution applies
-    // hysteresis because flow outputs can still overshoot that range.
+    const [dx, dy] = outOfBlockFrame(state[base] * scale, state[base + 1] * scale, cos, sin);
+    targetX += dx;
+    targetY += dy;
+    state[base] = targetX;
+    state[base + 1] = targetY;
   }
   return state;
 }

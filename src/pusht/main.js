@@ -24,8 +24,8 @@ const EXECUTE = 16;
 // The raw lift sign is wrong often enough that an isolated flip would send the
 // pusher through the block instead of into it; switching only on a confident
 // value and holding otherwise turns those into no-ops.
-const LIFT_ON = 0.65;
-const LIFT_OFF = 0.35;
+const LIFT_ON = 0.4;
+const LIFT_OFF = -0.4;
 // Candidate chunks drawn during the flow animation, and how many frames each
 // Euler step is held for. Two frames keeps the sampling and the motion at
 // roughly equal screen time; the tick row makes the ten steps legible without
@@ -65,7 +65,7 @@ const state = {
   lift: 0,
   trainSteps: 4000,
   stateNoise: 0.02,
-  actionNoise: 0.005,
+  actionNoise: 0.001,
   training: false,
   lossHistory: [],
 };
@@ -633,7 +633,7 @@ $("#stateNoiseRange").addEventListener("input", (event) => {
 
 $("#actionNoiseRange").addEventListener("input", (event) => {
   state.actionNoise = Number(event.target.value);
-  $("#actionNoiseOutput").textContent = state.actionNoise.toFixed(3);
+  $("#actionNoiseOutput").textContent = state.actionNoise.toFixed(4);
 });
 
 const arena = $("#arena");
