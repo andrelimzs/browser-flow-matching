@@ -40,7 +40,10 @@
 #startButton:hover { background: #66c57a; opacity: 1; }
 #startButton:disabled { box-shadow: none; }
 .control-label { margin: 24px 0 9px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+.rl-setting-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .rl-setting { display: grid; gap: 8px; margin-top: 15px; padding-top: 14px; border-top: 1px solid var(--line); }
+.rl-setting[hidden] { display: none; }
+.rl-setting-row .rl-setting { min-width: 0; }
 .rl-setting > div:first-child { display: flex; justify-content: space-between; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
 .rl-setting output { color: var(--ink); }
 .curriculum-toggle { min-width: 92px; }
