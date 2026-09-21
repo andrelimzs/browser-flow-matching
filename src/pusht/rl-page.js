@@ -70,7 +70,6 @@ const state = {
 };
 
 function setStatus(label, note) {
-  $("#trainingStatus").textContent = label;
   if (note) $("#statusNote").textContent = note;
 }
 
@@ -85,7 +84,6 @@ function setTraining(active, label = active ? "Training" : "Idle") {
   document.querySelectorAll("[data-algorithm], [data-width], [data-reward-shaping], [data-reward-weight]").forEach((control) => {
     control.disabled = active;
   });
-  $("#trainingPill").dataset.active = active ? "true" : "false";
   $(".live-indicator").classList.toggle("is-running", active);
   $(".live-indicator").lastChild.textContent = active ? " Training in background" : " Worker ready";
   setStatus(label);
@@ -239,6 +237,83 @@ function drawReturnChart() {
   }
 }
 
+function drawEvaluationMetricsChart() {
+  const canvas = $("#evaluationMetricsCanvas");
+  const context = canvas.getContext("2d");
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  canvas.height = Math.max(1, Math.round(rect.height * dpr));
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  context.clearRect(0, 0, rect.width, rect.height);
+
+  const padding = { left: 35, right: 35, top: 12, bottom: 14 };
+  const plotWidth = Math.max(1, rect.width - padding.left - padding.right);
+  const plotHeight = Math.max(1, rect.height - padding.top - padding.bottom);
+  context.strokeStyle = "rgba(25, 28, 27, .08)";
+  context.lineWidth = 1;
+  for (let line = 0; line <= 4; line += 1) {
+    const y = padding.top + plotHeight * line / 4;
+    context.beginPath();
+    context.moveTo(padding.left, y);
+    context.lineTo(padding.left + plotWidth, y);
+    context.stroke();
+  }
+
+  if (!state.rollouts.length) {
+    context.fillStyle = "#8a8f89";
+    context.font = '10px "DM Mono", monospace';
+    context.textAlign = "center";
+    context.fillText("Evaluation metrics appear when training starts", rect.width / 2, rect.height / 2 + 4);
+    return;
+  }
+
+  const success = simpleMovingAverage(
+    state.rollouts.map((rollout) => rollout.evaluationSuccessRate),
+    RETURN_SMA_WINDOW,
+  );
+  const coverage = simpleMovingAverage(
+    state.rollouts.map((rollout) => rollout.evaluationGoalCoverage),
+    RETURN_SMA_WINDOW,
+  );
+  const x = (index) => padding.left + index / Math.max(1, state.rollouts.length - 1) * plotWidth;
+  const successY = (value) => padding.top + (1 - value) * plotHeight;
+  const coverageY = (value) => padding.top + (1 - value) * plotHeight;
+  const drawSeries = (values, y, color, width) => {
+    context.beginPath();
+    values.forEach((value, index) => {
+      if (index === 0) context.moveTo(x(index), y(value));
+      else context.lineTo(x(index), y(value));
+    });
+    context.strokeStyle = color;
+    context.lineWidth = width;
+    context.stroke();
+  };
+  drawSeries(success, successY, "#3d9b55", 2);
+  drawSeries(coverage, coverageY, "#8a5ac2", 1.8);
+
+  context.font = '9px "DM Mono", monospace';
+  context.fillStyle = "#3d9b55";
+  context.textAlign = "right";
+  context.fillText("100%", padding.left - 6, padding.top + 3);
+  context.fillText("0%", padding.left - 6, padding.top + plotHeight);
+  context.fillStyle = "#8a5ac2";
+  context.textAlign = "left";
+  context.fillText("100%", padding.left + plotWidth + 6, padding.top + 3);
+  context.fillText("0%", padding.left + plotWidth + 6, padding.top + plotHeight);
+
+  if (state.selected >= 0) {
+    context.beginPath();
+    context.arc(x(state.selected), successY(success[state.selected]), 3.5, 0, Math.PI * 2);
+    context.fillStyle = "#3d9b55";
+    context.fill();
+    context.beginPath();
+    context.arc(x(state.selected), coverageY(coverage[state.selected]), 3.5, 0, Math.PI * 2);
+    context.fillStyle = "#8a5ac2";
+    context.fill();
+  }
+}
+
 function drawRolloutValueChart() {
   const canvas = $("#valueCanvas");
   const context = canvas.getContext("2d");
@@ -379,6 +454,7 @@ function selectRollout(index) {
     ? "Estimated remaining return V(s)"
     : "Reward over rollout · Dr.GRPO has no critic";
   drawReturnChart();
+  drawEvaluationMetricsChart();
   drawRolloutValueChart();
 }
 
@@ -395,6 +471,7 @@ function addRollout(message) {
     representativeReturn: message.representativeReturn,
     evaluationRollouts: message.evaluationRollouts,
     evaluationSuccessRate: message.evaluationSuccessRate,
+    evaluationGoalCoverage: message.evaluationGoalCoverage,
     deterministicEvaluation: Boolean(message.deterministicEvaluation),
     trainReturn: Number.isFinite(message.trainReturn) ? message.trainReturn : null,
     success: message.success,
@@ -417,11 +494,11 @@ function addRollout(message) {
   slider.disabled = false;
   slider.max = String(state.rollouts.length - 1);
   $("#rolloutEmpty").hidden = true;
-  $("#latestReturn").textContent = formatReturn(message.return);
   if (state.selected < 0) selectRollout(0);
   else {
     state.pendingLatest = state.rollouts.length - 1;
     drawReturnChart();
+    drawEvaluationMetricsChart();
   }
 }
 
@@ -449,8 +526,8 @@ function resetRun() {
   $("#valueLegendItem").hidden = false;
   $("#valueLegend").textContent = "V(s)";
   $("#valuePlotTitle").textContent = "Estimated remaining return V(s)";
-  $("#latestReturn").textContent = "—";
   drawReturnChart();
+  drawEvaluationMetricsChart();
   drawRolloutValueChart();
 }
 
@@ -731,6 +808,7 @@ function registerWebMcpTools() {
           coverage: selected.coverage,
           success: selected.success,
           evaluationSuccessRate: selected.evaluationSuccessRate,
+          evaluationGoalCoverage: selected.evaluationGoalCoverage,
         } : null,
       };
     },
@@ -837,6 +915,7 @@ $("#startButton").addEventListener("click", startTraining);
 $("#stopButton").addEventListener("click", () => stopTraining());
 window.addEventListener("resize", () => {
   drawReturnChart();
+  drawEvaluationMetricsChart();
   drawRolloutValueChart();
 });
 const webMcpLifecycle = registerWebMcpTools();

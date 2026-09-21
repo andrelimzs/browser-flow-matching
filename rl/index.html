@@ -51,7 +51,7 @@
               </div>
               <div class="rollout-empty" id="rolloutEmpty">
                 <strong>No rollouts logged yet</strong>
-                <span>Start training to capture an evaluation rollout every 200 steps.</span>
+                <span>Start training to capture evaluation rollouts.</span>
               </div>
             </div>
 
@@ -91,24 +91,20 @@
           </article>
 
           <aside class="training-card rl-controls">
-            <div class="card-heading">
-              <div>
-                <p class="label">Background trainer</p>
-                <h2>Experiment controls</h2>
-              </div>
-              <div class="phase-pill" id="trainingPill"><span></span><span id="trainingStatus">Idle</span></div>
-            </div>
-
             <div class="return-panel">
-              <div class="return-heading">
-                <div><p class="label">Latest 10-rollout eval mean</p><strong id="latestReturn">—</strong></div>
-                <span>every 200 steps</span>
-              </div>
               <div class="plot-legend return-legend" aria-hidden="true">
                 <span><i class="evaluation-return-swatch"></i><b>Eval mean · SMA 10</b></span>
                 <span><i class="training-return-swatch"></i><b>Train mean · SMA 10</b></span>
               </div>
               <canvas id="returnCanvas" aria-label="Ten-point simple moving averages of evaluation and mean training episode returns"></canvas>
+            </div>
+
+            <div class="return-panel">
+              <div class="plot-legend return-legend" aria-hidden="true">
+                <span><i class="success-rate-swatch"></i><b>Success rate · SMA 10</b></span>
+                <span><i class="goal-coverage-swatch"></i><b>Goal coverage · SMA 10</b></span>
+              </div>
+              <canvas id="evaluationMetricsCanvas" aria-label="Success rate and mean goal coverage over training with separate percentage axes"></canvas>
             </div>
 
             <p class="control-label">Algorithm</p>

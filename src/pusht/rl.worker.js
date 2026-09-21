@@ -53,6 +53,7 @@ self.onmessage = async ({ data }) => {
     const evaluationRollouts = [];
     let evaluationReturn = 0;
     let evaluationSuccesses = 0;
+    let evaluationCoverage = 0;
     for (let episode = 0; episode < EVALUATION_ROLLOUTS; episode++) {
       const evaluationEnv = new PushTRLEnv({
         seed: seed + 10_000 + episode,
@@ -69,6 +70,7 @@ self.onmessage = async ({ data }) => {
       });
       evaluationRollouts.push(rollout);
       evaluationReturn += rollout.return;
+      evaluationCoverage += rollout.coverage;
       if (rollout.success) evaluationSuccesses += 1;
     }
     evaluationReturn /= EVALUATION_ROLLOUTS;
@@ -96,6 +98,7 @@ self.onmessage = async ({ data }) => {
       deterministicEvaluation,
       evaluationRollouts: EVALUATION_ROLLOUTS,
       evaluationSuccessRate: evaluationSuccesses / EVALUATION_ROLLOUTS,
+      evaluationGoalCoverage: evaluationCoverage / EVALUATION_ROLLOUTS,
       representativeReturn: rollout.return,
       trainReturn: progress.trainReturn ?? progress.groupReturnMean ?? null,
       hasValueEstimate: progress.algorithm === "ppo",

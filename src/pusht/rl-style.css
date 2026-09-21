@@ -34,6 +34,8 @@
 .reward-swatch { background: #ed6b55; }
 .evaluation-return-swatch { background: #1d66db; }
 .training-return-swatch { background: #d06a3e; }
+.success-rate-swatch { background: #3d9b55; }
+.goal-coverage-swatch { background: #8a5ac2; }
 #valueCanvas { display: block; width: 100%; height: 190px; border: 1px solid var(--line); background: #f4f2ec; }
 .rl-controls { min-width: 0; }
 #startButton { border-color: #3d9b55; background: #58b96d; color: #071f0d; box-shadow: 0 7px 20px rgba(40, 133, 63, .18); }
@@ -60,12 +62,9 @@
 .reward-control input:disabled { opacity: .45; }
 .range-ends { display: flex; justify-content: space-between; color: #949993; font-family: "DM Mono", monospace; font-size: 9px; }
 .return-panel { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
-.return-heading { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 10px; }
-.return-heading .label { margin-bottom: 5px; color: var(--muted); }
-.return-heading strong { font-size: 23px; }
-.return-heading > span { color: var(--muted); font-family: "DM Mono", monospace; font-size: 9px; text-transform: uppercase; }
-.return-legend { justify-content: flex-end; margin: -3px 0 8px; }
-#returnCanvas { display: block; width: 100%; height: 150px; border: 1px solid var(--line); background: #f4f2ec; }
+.rl-controls > .return-panel:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.return-legend { justify-content: flex-end; margin: 0 0 8px; }
+#returnCanvas, #evaluationMetricsCanvas { display: block; width: 100%; height: 150px; border: 1px solid var(--line); background: #f4f2ec; }
 .eval-mode-control { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
 .eval-mode-control .mode-toggle { min-width: 138px; }
 
