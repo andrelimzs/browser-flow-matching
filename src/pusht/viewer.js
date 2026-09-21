@@ -26,7 +26,15 @@ const world = new PushWorld({ random, obstacleCount: 0 });
 const view = createView($("#arena"));
 const store = new DemoStore().restore();
 
-const state = { episode: null, index: -1, expert: null, policy: null, cursor: 0, playing: false };
+const state = {
+  episode: null,
+  index: -1,
+  expert: null,
+  policy: null,
+  cursor: 0,
+  playing: false,
+  showTrajectoryOverview: false,
+};
 let policy = null;
 let policyScales = null;
 let policyObstacles = 0;
@@ -118,6 +126,7 @@ function selectEpisode(index) {
   state.policy = policyTrace(episode);
   state.cursor = 0;
   state.playing = false;
+  state.showTrajectoryOverview = true;
 
   if (state.policy?.mismatch) {
     setStatus(`This episode has ${episode.obstacleCount ?? "?"} obstacles but the cached policy was trained with ${policyObstacles}. Train a policy at a matching count to compare.`);
@@ -220,10 +229,23 @@ function frame() {
 
     const paths = [];
     if (state.expert) {
-      paths.push({ points: state.expert.pusher, cursor: state.cursor + 1, color: "rgba(29, 102, 219, .85)", width: 1.8 });
+      paths.push({
+        points: state.expert.pusher,
+        cursor: state.showTrajectoryOverview ? state.expert.steps : state.cursor + 1,
+        color: "rgba(29, 102, 219, .85)",
+        width: 1.8,
+        head: !state.showTrajectoryOverview,
+      });
     }
     if (state.policy) {
-      paths.push({ points: state.policy.pusher, cursor: state.cursor + 1, color: "rgba(237, 107, 85, .9)", width: 1.8, dashed: true });
+      paths.push({
+        points: state.policy.pusher,
+        cursor: state.showTrajectoryOverview ? state.policy.steps : state.cursor + 1,
+        color: "rgba(237, 107, 85, .9)",
+        width: 1.8,
+        dashed: true,
+        head: !state.showTrajectoryOverview,
+      });
     }
     view.draw(world, { paths, ghost: policyPose && expertPose ? expertPose : null, coverage: world.coverage() });
   } else {
@@ -241,6 +263,7 @@ $("#scrub").addEventListener("input", (event) => {
 $("#playButton").addEventListener("click", () => {
   if (!state.episode) return;
   if (state.cursor >= longest() - 1) state.cursor = 0;
+  state.showTrajectoryOverview = false;
   state.playing = !state.playing;
   syncUI();
 });
@@ -249,6 +272,8 @@ $("#rerunButton").addEventListener("click", () => {
   if (!state.episode) return;
   state.policy = policyTrace(state.episode);
   state.cursor = 0;
+  state.playing = false;
+  state.showTrajectoryOverview = true;
   setStatus("Policy re-sampled — a fresh draw from the same distribution.");
   syncUI();
 });
