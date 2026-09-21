@@ -7,15 +7,17 @@ import { trainSAC } from "../src/pusht/rl/sac.js";
 
 const finiteModel = (model) => model.params.every((buffer) => buffer.every(Number.isFinite));
 
-// Environment contract and sparse reward: every nonterminal reward is zero and
-// the expert receives exactly one reward on the completing transition.
+// Environment contract and potential-based shaping: distance rewards telescope
+// to the net reduction in block-goal distance, plus exactly one on completion.
 const env = new PushTRLEnv({ seed: 10, horizon: 2200 });
 let observation = env.reset();
+const initialDistance = env.distance;
 if (observation.length !== RL_OBSERVATION_SIZE || RL_ACTION_SIZE !== 2) throw new Error("wrong RL shape");
 const expert = new ScriptedExpert({ random: createRandom(11), tieBreak: "cw" });
 const action = new Float32Array(2);
 let completionRewards = 0;
-let shapedRewards = 0;
+let distanceReward = 0;
+let totalReward = 0;
 let solved = false;
 for (let step = 0; step < 2200; step++) {
   const [targetX, targetY] = expert.act(env.world);
@@ -23,12 +25,19 @@ for (let step = 0; step < 2200; step++) {
   action[1] = (targetY - env.world.pusher.y) / MAX_PUSHER_SPEED;
   const transition = env.step(action);
   observation = transition.observation;
-  if (transition.reward === 1) completionRewards += 1;
-  else if (transition.reward !== 0) shapedRewards += 1;
+  completionRewards += transition.completionReward;
+  distanceReward += transition.distanceProgress;
+  totalReward += transition.reward;
   if (transition.done) { solved = transition.success; break; }
 }
-console.log(`environment: obs ${observation.length}, action ${RL_ACTION_SIZE}, solved ${solved}, completion rewards ${completionRewards}, other rewards ${shapedRewards}`);
-if (!solved || completionRewards !== 1 || shapedRewards !== 0) throw new Error("reward is not completion-only");
+const expectedDistanceReward = initialDistance - env.distance;
+console.log(
+  `environment: obs ${observation.length}, action ${RL_ACTION_SIZE}, solved ${solved}, ` +
+  `completion ${completionRewards}, distance reward ${distanceReward.toFixed(4)}, total ${totalReward.toFixed(4)}`,
+);
+if (!solved || completionRewards !== 1) throw new Error("completion reward is wrong");
+if (Math.abs(distanceReward - expectedDistanceReward) > 1e-6) throw new Error("distance shaping does not telescope");
+if (Math.abs(totalReward - (1 + expectedDistanceReward)) > 1e-6) throw new Error("combined reward is wrong");
 
 // Validate the critic input-gradient path against finite differences.
 const gradientRandom = createRandom(12);
@@ -54,8 +63,8 @@ console.log(`critic input-gradient worst error ${worst.toExponential(3)}`);
 if (worst > 2e-4) throw new Error(`critic input-gradient mismatch ${worst}`);
 
 // Short algorithm smoke runs catch non-finite losses, buffer mistakes and SAC's
-// actor-through-critic gradient wiring. They are not expected to solve a sparse
-// completion task in a few hundred interactions.
+// actor-through-critic gradient wiring. They are not expected to solve the task
+// in a few hundred interactions.
 const ppo = trainPPO({
   env: new PushTRLEnv({ seed: 20, horizon: 80 }),
   random: createRandom(21),
