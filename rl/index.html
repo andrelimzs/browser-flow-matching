@@ -172,6 +172,10 @@
                   <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-0.01" data-reward-weight="stepPenalty" aria-label="Every-step reward weight" /></label>
                 </div>
                 <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="actionAcceleration" aria-pressed="true">ddx² + ddy² −0.01</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-0.01" data-reward-weight="actionAcceleration" aria-label="Action acceleration penalty weight" /></label>
+                </div>
+                <div class="reward-control">
                   <button class="mode-toggle" type="button" data-reward-shaping="pusherWall" aria-pressed="false">Pusher wall −1 · end</button>
                   <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-1" data-reward-weight="pusherWall" aria-label="Pusher wall reward weight" /></label>
                 </div>

@@ -66,13 +66,16 @@ if (Math.abs(scaledRewardEnv.pusherDistanceRewardScale * MAX_PUSHER_SPEED - 0.01
 if (scaledRewardEnv.rewardShaping.pusherWall || scaledRewardEnv.rewardShaping.blockWall) {
   throw new Error("wall reward components do not default to off");
 }
-if (!scaledRewardEnv.rewardShaping.stepPenalty) throw new Error("step penalty does not default to on");
+if (!scaledRewardEnv.rewardShaping.stepPenalty || !scaledRewardEnv.rewardShaping.actionAcceleration) {
+  throw new Error("step and action-acceleration penalties do not default to on");
+}
 if (scaledRewardEnv.rewardWeights.blockDistance !== 3 ||
     Math.abs(scaledRewardEnv.rewardWeights.pusherDistance - 0.01 / MAX_PUSHER_SPEED) > 1e-12 ||
     scaledRewardEnv.rewardWeights.orientation !== 1 || scaledRewardEnv.rewardWeights.completion !== 10 ||
     scaledRewardEnv.rewardWeights.closeness !== 5 || scaledRewardEnv.rewardWeights.pusherWall !== -1 ||
     scaledRewardEnv.rewardWeights.blockWall !== -10 || scaledRewardEnv.rewardWeights.inactivity !== -1 ||
-    scaledRewardEnv.rewardWeights.stepPenalty !== -0.01) {
+    scaledRewardEnv.rewardWeights.stepPenalty !== -0.01 ||
+    scaledRewardEnv.rewardWeights.actionAcceleration !== -0.01) {
   throw new Error("reward weights do not preserve the previous defaults");
 }
 const noShapingEnv = new PushTRLEnv({
@@ -84,6 +87,7 @@ const noShapingEnv = new PushTRLEnv({
     orientation: false,
     closeness: false,
     stepPenalty: false,
+    actionAcceleration: false,
   },
 });
 noShapingEnv.reset();
@@ -105,6 +109,7 @@ const weightedStepEnv = new PushTRLEnv({
     pusherDistance: false,
     orientation: false,
     closeness: false,
+    actionAcceleration: false,
   },
   rewardWeights: { stepPenalty: -0.25 },
 });
@@ -112,6 +117,34 @@ weightedStepEnv.reset();
 const weightedStepTransition = weightedStepEnv.step(Float32Array.of(1, 0));
 if (weightedStepTransition.stepPenalty !== -0.25 || weightedStepTransition.reward !== -0.25) {
   throw new Error("custom reward weight did not scale the enabled component");
+}
+const actionAccelerationEnv = new PushTRLEnv({
+  seed: 8,
+  curriculum: false,
+  maxStationarySteps: Infinity,
+  rewardShaping: {
+    completion: false,
+    blockDistance: false,
+    pusherDistance: false,
+    orientation: false,
+    closeness: false,
+    pusherWall: false,
+    blockWall: false,
+    inactivity: false,
+    stepPenalty: false,
+    actionAcceleration: true,
+  },
+});
+actionAccelerationEnv.reset();
+const accelerationStart = actionAccelerationEnv.step(Float32Array.of(1, 0));
+const accelerationSteady = actionAccelerationEnv.step(Float32Array.of(1, 0));
+const accelerationReverse = actionAccelerationEnv.step(Float32Array.of(-1, 0));
+if (Math.abs(accelerationStart.actionAccelerationPenalty + 0.01) > 1e-6 ||
+    Math.abs(accelerationSteady.actionAccelerationPenalty) > 1e-12 ||
+    Math.abs(accelerationReverse.actionAccelerationPenalty + 0.04) > 1e-6 ||
+    Math.abs(accelerationStart.ddx - 1) > 1e-6 || accelerationStart.ddy !== 0 ||
+    Math.abs(accelerationReverse.ddx + 2) > 1e-6 || accelerationReverse.ddy !== 0) {
+  throw new Error("unit-action ddx/ddy penalty is scaled incorrectly");
 }
 const stationaryShapingEnv = new PushTRLEnv({ seed: 8, curriculum: false });
 stationaryShapingEnv.reset();
@@ -132,6 +165,7 @@ const onlyInactivity = {
   blockWall: false,
   inactivity: true,
   stepPenalty: false,
+  actionAcceleration: false,
 };
 const inactivityEnv = new PushTRLEnv({
   seed: 18,
@@ -188,7 +222,13 @@ if (!disabledInactivityTransition.stalled || !disabledInactivityTransition.done 
 const pusherShapingEnv = new PushTRLEnv({
   seed: 8,
   curriculum: false,
-  rewardShaping: { blockDistance: false, orientation: false, closeness: false, stepPenalty: false },
+  rewardShaping: {
+    blockDistance: false,
+    orientation: false,
+    closeness: false,
+    stepPenalty: false,
+    actionAcceleration: false,
+  },
 });
 pusherShapingEnv.reset();
 const pusherDistanceBefore = pusherShapingEnv.pusherDistance;
@@ -209,7 +249,13 @@ if (Math.abs(pusherShapingTransition.reward - expectedPusherShaping) > 1e-6 ||
 const awayShapingEnv = new PushTRLEnv({
   seed: 8,
   curriculum: false,
-  rewardShaping: { blockDistance: false, orientation: false, closeness: false, stepPenalty: false },
+  rewardShaping: {
+    blockDistance: false,
+    orientation: false,
+    closeness: false,
+    stepPenalty: false,
+    actionAcceleration: false,
+  },
 });
 awayShapingEnv.reset();
 const awayTransition = awayShapingEnv.step(normalizedAction(
@@ -310,6 +356,7 @@ let pusherDistanceReward = 0;
 let orientationReward = 0;
 let finalClosenessReward = 0;
 let stepPenaltyReward = 0;
+let actionAccelerationReward = 0;
 let totalReward = 0;
 let solved = false;
 for (let step = 0; step < 2200; step++) {
@@ -323,6 +370,7 @@ for (let step = 0; step < 2200; step++) {
   orientationReward += transition.orientationShapingReward;
   finalClosenessReward += transition.finalClosenessReward;
   stepPenaltyReward += transition.stepPenalty;
+  actionAccelerationReward += transition.actionAccelerationPenalty;
   totalReward += transition.reward;
   if (transition.done) { solved = transition.success; break; }
 }
@@ -331,12 +379,12 @@ console.log(
   `completion ${completionRewards}, distance reward ${distanceReward.toFixed(4)}, ` +
   `pusher reward ${pusherDistanceReward.toFixed(4)}, ` +
   `orientation reward ${orientationReward.toFixed(4)}, closeness ${finalClosenessReward.toFixed(4)}, ` +
-  `step cost ${stepPenaltyReward.toFixed(4)}, ` +
+  `step cost ${stepPenaltyReward.toFixed(4)}, acceleration cost ${actionAccelerationReward.toFixed(4)}, ` +
   `total ${totalReward.toFixed(4)}`,
 );
 if (!solved || completionRewards !== 10) throw new Error("completion reward is wrong");
 if (Math.abs(totalReward - (10 + finalClosenessReward + distanceReward +
-    pusherDistanceReward + orientationReward + stepPenaltyReward)) > 1e-5) {
+    pusherDistanceReward + orientationReward + stepPenaltyReward + actionAccelerationReward)) > 1e-5) {
   throw new Error("combined reward is wrong");
 }
 
@@ -392,7 +440,7 @@ if (!wallTransition?.wallContact || wallTransition.wallTermination || wallTransi
 }
 const expectedWallReward = wallTransition.distanceShapingReward +
   wallTransition.pusherDistanceShapingReward + wallTransition.orientationShapingReward +
-  wallTransition.stepPenalty;
+  wallTransition.stepPenalty + wallTransition.actionAccelerationPenalty;
 if (wallTransition.wallPenalty !== 0 || Math.abs(wallTransition.reward - expectedWallReward) > 1e-9) {
   throw new Error("disabled pusher-wall penalty changed the reward");
 }

@@ -19,6 +19,7 @@ const REWARD_COMPONENTS = [
   "blockWall",
   "inactivity",
   "stepPenalty",
+  "actionAcceleration",
 ];
 const REWARD_WEIGHT_DEFAULTS = {
   completion: 10,
@@ -30,6 +31,7 @@ const REWARD_WEIGHT_DEFAULTS = {
   blockWall: -10,
   inactivity: -1,
   stepPenalty: -0.01,
+  actionAcceleration: -0.01,
 };
 const entropyConfigs = {
   ppo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
@@ -53,6 +55,7 @@ const state = {
     blockWall: false,
     inactivity: true,
     stepPenalty: true,
+    actionAcceleration: true,
   },
   rewardWeights: { ...REWARD_WEIGHT_DEFAULTS },
   entropyByAlgorithm: { ppo: 0, drgrpo: 0.01 },
@@ -735,6 +738,7 @@ function registerWebMcpTools() {
             blockWall: { type: "boolean" },
             inactivity: { type: "boolean" },
             stepPenalty: { type: "boolean" },
+            actionAcceleration: { type: "boolean" },
           },
           required: REWARD_COMPONENTS,
           additionalProperties: false,

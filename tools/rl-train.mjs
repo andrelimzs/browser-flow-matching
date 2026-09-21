@@ -40,7 +40,7 @@ const onProgress = (progress) => {
 };
 
 console.log(
-  `${algorithmLabel} · single frame (11) · unit-disk action dx/dy (2) · signed distance/orientation progress + final coverage and completion; -0.01/step; inactivity terminates at 5 still steps\n` +
+  `${algorithmLabel} · single frame (11) · unit-disk action dx/dy (2) · signed distance/orientation progress + final coverage and completion; -0.01/step; -0.01(ddx²+ddy²); inactivity terminates at 5 still steps\n` +
   `seed ${seed} · horizon ${horizon} · width ${width} · curriculum ${curriculum ? "on" : "off"} · steps ${totalSteps.toLocaleString()}`,
 );
 
@@ -74,7 +74,7 @@ if (process.env.OUT) {
     algorithm,
     observation: "single normalized frame",
     action: "dx,dy projected onto the unit disk and scaled to max pusher speed",
-    reward: "signed block-goal, pusher-goal, and orientation progress + final shape-overlap coverage + completion; -0.01 every step; -1 and termination after 5 stationary pusher steps; each wall penalty toggle also controls its termination",
+    reward: "signed block-goal, pusher-goal, and orientation progress + final shape-overlap coverage + completion; -0.01 every step; -0.01 times squared unit-action acceleration; -1 and termination after 5 stationary pusher steps; each wall penalty toggle also controls its termination",
     seed,
     totalSteps,
     horizon,

@@ -3,7 +3,8 @@
 // Observation: the current normalized simulator observation (no frame stack).
 // Action: dx/dy projected onto the unit disk, then scaled by MAX_PUSHER_SPEED.
 // Reward: signed progress in block distance, pusher distance, and orientation;
-// optional terminal/closeness and wall components.
+// optional terminal/closeness and wall components; per-step and squared
+// unit-action acceleration penalties.
 
 import {
   FIXED_BLOCK_START,
@@ -91,6 +92,7 @@ export class PushTRLEnv {
       blockWall: rewardShaping.blockWall ?? false,
       inactivity: rewardShaping.inactivity ?? true,
       stepPenalty: rewardShaping.stepPenalty ?? true,
+      actionAcceleration: rewardShaping.actionAcceleration ?? true,
     };
     this.rewardWeights = {
       completion: rewardWeight(rewardWeights.completion, 10),
@@ -102,6 +104,7 @@ export class PushTRLEnv {
       blockWall: rewardWeight(rewardWeights.blockWall, -10),
       inactivity: rewardWeight(rewardWeights.inactivity, -1),
       stepPenalty: rewardWeight(rewardWeights.stepPenalty, -0.01),
+      actionAcceleration: rewardWeight(rewardWeights.actionAcceleration, -0.01),
     };
     this.curriculum = curriculum;
     this.trainingProgress = 0;
@@ -114,6 +117,7 @@ export class PushTRLEnv {
     this.orientationError = 0;
     this.stationarySteps = 0;
     this.actionDelta = new Float32Array(2);
+    this.previousAction = new Float32Array(2);
   }
 
   setTrainingProgress(progress) {
@@ -224,11 +228,21 @@ export class PushTRLEnv {
     this.pusherDistance = this.pusherGoalDistance();
     this.orientationError = this.blockGoalOrientationError();
     this.stationarySteps = 0;
+    this.previousAction.fill(0);
     return this.observe();
   }
 
   step(action) {
     const [dx, dy] = cartesianActionToDelta(action, this.actionDelta);
+    const normalizedActionX = dx / MAX_PUSHER_SPEED;
+    const normalizedActionY = dy / MAX_PUSHER_SPEED;
+    const ddx = normalizedActionX - this.previousAction[0];
+    const ddy = normalizedActionY - this.previousAction[1];
+    this.previousAction[0] = normalizedActionX;
+    this.previousAction[1] = normalizedActionY;
+    const actionAccelerationPenalty = this.rewardShaping.actionAcceleration
+      ? (ddx * ddx + ddy * ddy) * this.rewardWeights.actionAcceleration
+      : 0;
     const previousPusherX = this.world.pusher.x;
     const previousPusherY = this.world.pusher.y;
     this.world.step(this.world.pusher.x + dx, this.world.pusher.y + dy, 0);
@@ -277,7 +291,7 @@ export class PushTRLEnv {
     const finalClosenessReward = done && !wallTermination && !blockWallTermination && !stalled &&
       this.rewardShaping.closeness ? coverage * this.rewardWeights.closeness : 0;
     const reward = completionReward + finalClosenessReward + wallPenalty + blockWallPenalty +
-      inactivityPenalty + stepPenalty +
+      inactivityPenalty + stepPenalty + actionAccelerationPenalty +
       (this.rewardShaping.blockDistance ? distanceShapingReward : 0) +
       (this.rewardShaping.pusherDistance ? pusherDistanceShapingReward : 0) +
       (this.rewardShaping.orientation ? orientationShapingReward : 0);
@@ -291,6 +305,9 @@ export class PushTRLEnv {
       blockWallPenalty,
       inactivityPenalty,
       stepPenalty,
+      actionAccelerationPenalty,
+      ddx,
+      ddy,
       distanceProgress,
       distanceShapingReward,
       distance,
