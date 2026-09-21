@@ -44,7 +44,7 @@ console.log(`collected ${DEMOS} episodes (${collected.toLocaleString()} transiti
 const dataset = buildDataset(episodes);
 console.log(`training on ${dataset.episodes}/${episodes.length} solved episodes, ${dataset.count.toLocaleString()} of ${collected.toLocaleString()} transitions (failures dropped)`);
 const policy = makePolicy({ observationSize: dataset.observationSize, width: WIDTH, maxBatch: 256, random });
-console.log(`observation: ${dataset.observationSize} egocentric dims (from ${episodes[0].observationSize} absolute)`);
+console.log(`observation: ${dataset.observationSize} normalized absolute dims`);
 const trainer = new PolicyTrainer({ policy, batch: 256, learningRate: 0.002, random });
 console.log(`policy ${policy.model.sizes.join("->")}, ${policy.model.params.reduce((s,a)=>s+a.length,0).toLocaleString()} params`);
 

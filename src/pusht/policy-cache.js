@@ -6,10 +6,9 @@
 // the demonstrations.
 
 const STORAGE_KEY = "pusht-policy-v1";
-// Version 2 changed xy chunks to deltas, version 3 fixed the task distribution,
-// version 4 adopted smooth targets, and version 5 adopts the staged expert.
-// Earlier weights are not a valid cached policy for the current data.
-const VERSION = 5;
+// Version 6 returns to absolute [0, 1] actions, normalizes absolute states to
+// [-1, 1], and fixes the zero-obstacle start/goal configuration.
+const VERSION = 6;
 
 function toBase64(values) {
   const bytes = new Uint8Array(values.buffer, values.byteOffset, values.byteLength);

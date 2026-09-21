@@ -14,8 +14,8 @@ import { MLP } from "../flow/mlp.js";
 import { createView } from "./render.js";
 
 const EXECUTE = 16;
-const LIFT_ON = 0.4;
-const LIFT_OFF = -0.4;
+const LIFT_ON = 0.65;
+const LIFT_OFF = 0.35;
 const POLICY_CAP = 600;
 const DIVERGENCE = 0.05;
 

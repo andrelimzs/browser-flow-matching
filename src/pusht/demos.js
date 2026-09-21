@@ -5,10 +5,9 @@
 // array without re-walking object graphs.
 
 const STORAGE_KEY = "pusht-demos-v1";
-// Version 2 fixed the task distribution, version 3 added smooth waypoints, and
-// version 4 makes the zero-obstacle expert follow a fixed orient/push/align
-// curriculum. Older commands would blur that deliberately simple structure.
-const VERSION = 4;
+// Version 5 fixes the complete zero-obstacle start and goal configuration.
+// Earlier demonstrations belong to a broader task distribution.
+const VERSION = 5;
 
 // World coordinates live in [0, 1] and the pusher moves 0.017 per step, so four
 // decimals is far finer than the simulation can distinguish. Full float

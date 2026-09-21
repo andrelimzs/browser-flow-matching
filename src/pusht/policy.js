@@ -32,86 +32,44 @@ export const CHUNK = 32;
 export const ACTION_DIM = 3;
 export const CHUNK_WIDTH = CHUNK * ACTION_DIM;
 
-// Actions are represented as first differences, not absolute arena coordinates:
-// the first command is relative to the current pusher, and every later command
-// is relative to the preceding command. Sampling cumulatively reconstructs the
-// absolute targets consumed by the simulator. This makes temporal smoothness
-// explicit: a steady expert target becomes zeros instead of being re-predicted
-// independently at every position in the chunk.
-//
-// The scale is the standard deviation of that delta, not its extreme: flow
-// matching transports a unit Gaussian onto this distribution, and dividing by
-// the p99 instead left the target at std 0.29 against a source of std 1.0, so
-// the model saw mostly noise. Tails past 1 are fine and expected.
-//
-// Each delta position has its own statistic so the larger first jump and the
-// small subsequent corrections both meet the unit Gaussian at a useful scale.
-// The scales travel with the dataset. This is the fallback when none are given.
-export const DELTA_SCALE = 0.06;
-
-// The observation is expressed in the block's frame, not the arena's.
-//
-// Pushing a block toward a goal is the same problem wherever it happens in the
-// arena and whatever its global orientation, but absolute coordinates hide that
-// from the model, which then has to learn the invariance from data. Measured on
-// solved demonstrations, the egocentric encoding explains 53.3% of the action
-// variance against 33.9% for the absolute one, from four fewer inputs. The
-// actions have to be rotated into the same frame: leaving them in world
-// coordinates gives back half the gain (42.3%).
-//
-// Input from PushWorld.writeObservation is absolute: pusher xy, block xy, block
-// cos/sin, goal xy, goal cos/sin, then (x, y, r) per obstacle.
-const POSITION_SCALE = 2;
+// The policy predicts the simulator action directly in [0, 1]: absolute world
+// x/y plus binary lift. It is never made relative to the pusher or differenced.
+export const ACTION_SCALE = 1;
 
 // Raw layout is 11 fixed values (pusher xy, block xy, block cos/sin, goal xy,
 // goal cos/sin, lifted) plus 3 per obstacle.
-export function egocentricSize(rawSize) {
-  return 7 + (rawSize - 11);
+export function normalizedObservationSize(rawSize) {
+  return rawSize;
 }
 
-export function egocentricObservation(raw, out = new Float32Array(egocentricSize(raw.length))) {
-  const pusherX = raw[0], pusherY = raw[1];
-  const blockX = raw[2], blockY = raw[3];
-  const cos = raw[4], sin = raw[5];
+export function normalizeObservation(raw, out = new Float32Array(normalizedObservationSize(raw.length))) {
+  // Absolute state in [-1, 1]. Positions are affine-mapped from the unit arena;
+  // cos/sin already have the right range, and binary lift becomes -1/+1.
+  out[0] = raw[0] * 2 - 1;
+  out[1] = raw[1] * 2 - 1;
+  out[2] = raw[2] * 2 - 1;
+  out[3] = raw[3] * 2 - 1;
+  out[4] = raw[4];
+  out[5] = raw[5];
+  out[6] = raw[6] * 2 - 1;
+  out[7] = raw[7] * 2 - 1;
+  out[8] = raw[8];
+  out[9] = raw[9];
+  out[10] = raw[10] * 2 - 1;
 
-  // World offset into the block frame.
-  const toBlock = (x, y) => [(x * cos + y * sin) * POSITION_SCALE, (-x * sin + y * cos) * POSITION_SCALE];
-
-  const [pusherRelX, pusherRelY] = toBlock(pusherX - blockX, pusherY - blockY);
-  const [goalRelX, goalRelY] = toBlock(raw[6] - blockX, raw[7] - blockY);
-  // Goal orientation relative to the block, as cos/sin of the difference.
-  const goalCos = raw[8], goalSin = raw[9];
-  out[0] = pusherRelX;
-  out[1] = pusherRelY;
-  out[2] = goalRelX;
-  out[3] = goalRelY;
-  out[4] = goalCos * cos + goalSin * sin;
-  out[5] = goalSin * cos - goalCos * sin;
-  out[6] = raw[10];   // whether the pusher is currently lifted
-
-  let cursor = 7;
+  let cursor = 11;
   for (let index = 11; index < raw.length; index += 3) {
-    const [x, y] = toBlock(raw[index] - blockX, raw[index + 1] - blockY);
-    out[cursor++] = x;
-    out[cursor++] = y;
+    out[cursor++] = raw[index] * 2 - 1;
+    out[cursor++] = raw[index + 1] * 2 - 1;
     out[cursor++] = (raw[index + 2] - 0.05) * 20;
   }
   return out;
 }
 
-// Rotates a world-frame offset into the block frame, and back.
-export function intoBlockFrame(dx, dy, cos, sin) {
-  return [dx * cos + dy * sin, -dx * sin + dy * cos];
-}
-
-export function outOfBlockFrame(dx, dy, cos, sin) {
-  return [dx * cos - dy * sin, dx * sin + dy * cos];
-}
-
 // Input is [chunk, observation, time]; only time gets a Fourier lift. The
 // planner needed bands on its spatial inputs because it was fitting a thin
 // curve; this is a much lower-frequency function of position.
-// observationSize here is the egocentric width, i.e. egocentricSize(rawWidth).
+// observationSize here is the normalized state width.
 export function makePolicy({ observationSize, width = 128, maxBatch = 256, random = Math.random }) {
   const rawWidth = CHUNK_WIDTH + observationSize + 1;
   const timeIndex = rawWidth - 1;
@@ -152,7 +110,7 @@ export function buildDataset(episodes, { observationSize, includeFailures = fals
   );
   if (!usable.length) return null;
   const rawWidth = observationSize ?? usable[0].observationSize ?? usable[0].observations[0].length;
-  const width = egocentricSize(rawWidth);
+  const width = normalizedObservationSize(rawWidth);
   const count = usable.reduce((total, episode) => total + episode.observations.length, 0);
 
   const observations = new Float32Array(count * width);
@@ -160,51 +118,25 @@ export function buildDataset(episodes, { observationSize, includeFailures = fals
   const scratch = new Float32Array(width);
   let cursor = 0;
 
-  // Raw deltas first; the per-position scale is measured from them.
   for (const episode of usable) {
     const length = episode.observations.length;
     for (let index = 0; index < length; index++) {
       const raw = episode.observations[index];
-      egocentricObservation(raw, scratch);
+      normalizeObservation(raw, scratch);
       observations.set(scratch, cursor * width);
-      // The first command is relative to the current pusher; later commands are
-      // relative to the preceding command. All deltas use the block frame from
-      // the conditioning observation, so the whole chunk remains equivariant.
-      let previousX = raw[0];
-      let previousY = raw[1];
-      const cos = raw[4];
-      const sin = raw[5];
       for (let step = 0; step < CHUNK; step++) {
         const source = episode.actions[Math.min(length - 1, index + step)];
-        const [dx, dy] = intoBlockFrame(source[0] - previousX, source[1] - previousY, cos, sin);
-        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM] = dx;
-        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 1] = dy;
-        // Lift as +-1, in the same range as the rescaled xy channels.
-        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 2] = ((source[2] ?? 0) > 0.5 ? 1 : -1);
-        previousX = source[0];
-        previousY = source[1];
+        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM] = source[0];
+        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 1] = source[1];
+        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 2] = (source[2] ?? 0) > 0.5 ? 1 : 0;
       }
       cursor += 1;
     }
   }
 
-  // Only the xy channels are rescaled; lift is already a +-1 flag.
-  const scales = new Float32Array(CHUNK);
-  for (let step = 0; step < CHUNK; step++) {
-    let total = 0;
-    for (let row = 0; row < count; row++) {
-      const base = row * CHUNK_WIDTH + step * ACTION_DIM;
-      total += chunks[base] * chunks[base] + chunks[base + 1] * chunks[base + 1];
-    }
-    scales[step] = Math.max(1e-4, Math.sqrt(total / (count * 2)));
-  }
-  for (let row = 0; row < count; row++) {
-    for (let step = 0; step < CHUNK; step++) {
-      const base = row * CHUNK_WIDTH + step * ACTION_DIM;
-      chunks[base] /= scales[step];
-      chunks[base + 1] /= scales[step];
-    }
-  }
+  // Kept with the cached model schema; every absolute coordinate uses the same
+  // fixed normalization and no dataset-dependent statistic.
+  const scales = new Float32Array(CHUNK).fill(ACTION_SCALE);
 
   return { observations, chunks, scales, count, observationSize: width, episodes: usable.length };
 }
@@ -254,11 +186,7 @@ export class PolicyTrainer {
 // collapsed onto the chunks the policy considers plausible here, which is the
 // distribution the whole method exists to represent.
 export function createFlowSampler(policy, observation, { count = 12, steps = 10, random = Math.random, scales } = {}) {
-  const pusherX = observation[0];
-  const pusherY = observation[1];
-  const cos = observation[4];
-  const sin = observation[5];
-  const conditioning = egocentricObservation(observation);
+  const conditioning = normalizeObservation(observation);
   const gaussian = () => Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
 
   const states = new Float32Array(count * CHUNK_WIDTH);
@@ -284,16 +212,11 @@ export function createFlowSampler(policy, observation, { count = 12, steps = 10,
   // integration, so partially-transported noise can be drawn too.
   function polyline(sample, out) {
     const points = out ?? new Float32Array(CHUNK * 2);
-    let targetX = pusherX;
-    let targetY = pusherY;
     for (let k = 0; k < CHUNK; k++) {
       const base = sample * CHUNK_WIDTH + k * ACTION_DIM;
-      const scale = scales ? scales[k] : DELTA_SCALE;
-      const [dx, dy] = outOfBlockFrame(states[base] * scale, states[base + 1] * scale, cos, sin);
-      targetX += dx;
-      targetY += dy;
-      points[k * 2] = targetX;
-      points[k * 2 + 1] = targetY;
+      const scale = scales ? scales[k] : ACTION_SCALE;
+      points[k * 2] = states[base] * scale;
+      points[k * 2 + 1] = states[base + 1] * scale;
     }
     return points;
   }
@@ -301,16 +224,11 @@ export function createFlowSampler(policy, observation, { count = 12, steps = 10,
   // The finished chunk for one candidate, in the form step() consumes.
   function chunk(sample) {
     const out = new Float32Array(CHUNK_WIDTH);
-    let targetX = pusherX;
-    let targetY = pusherY;
     for (let k = 0; k < CHUNK; k++) {
       const base = sample * CHUNK_WIDTH + k * ACTION_DIM;
-      const scale = scales ? scales[k] : DELTA_SCALE;
-      const [dx, dy] = outOfBlockFrame(states[base] * scale, states[base + 1] * scale, cos, sin);
-      targetX += dx;
-      targetY += dy;
-      out[k * ACTION_DIM] = targetX;
-      out[k * ACTION_DIM + 1] = targetY;
+      const scale = scales ? scales[k] : ACTION_SCALE;
+      out[k * ACTION_DIM] = states[base] * scale;
+      out[k * ACTION_DIM + 1] = states[base + 1] * scale;
       out[k * ACTION_DIM + 2] = states[base + 2];
     }
     return out;
@@ -323,11 +241,7 @@ export function createFlowSampler(policy, observation, { count = 12, steps = 10,
 // coordinates. `model` here is a single-sample copy so inference does not
 // disturb a training batch in flight.
 export function sampleChunk(policy, observation, { steps = 10, random = Math.random, out, scales } = {}) {
-  const pusherX = observation[0];
-  const pusherY = observation[1];
-  const cos = observation[4];
-  const sin = observation[5];
-  const normalized = egocentricObservation(observation);
+  const normalized = normalizeObservation(observation);
   const state = out ?? new Float32Array(CHUNK_WIDTH);
   const gaussian = () => Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
   for (let index = 0; index < CHUNK_WIDTH; index++) state[index] = gaussian();
@@ -339,18 +253,14 @@ export function sampleChunk(policy, observation, { steps = 10, random = Math.ran
     const velocity = policy.model.forward(1);
     for (let index = 0; index < CHUNK_WIDTH; index++) state[index] += velocity[index] * delta;
   }
-  // Back out of the block frame and cumulatively reconstruct absolute targets.
-  let targetX = pusherX;
-  let targetY = pusherY;
+  // Decode normalized values directly into absolute world-space targets.
   for (let step = 0; step < CHUNK; step++) {
-    const scale = scales ? scales[step] : DELTA_SCALE;
+    const scale = scales ? scales[step] : ACTION_SCALE;
     const base = step * ACTION_DIM;
-    const [dx, dy] = outOfBlockFrame(state[base] * scale, state[base + 1] * scale, cos, sin);
-    targetX += dx;
-    targetY += dy;
-    state[base] = targetX;
-    state[base + 1] = targetY;
-    // Left as the raw signed value; execution applies hysteresis to it.
+    state[base] *= scale;
+    state[base + 1] *= scale;
+    // Lift stays in the raw [0, 1] action convention; execution applies
+    // hysteresis because flow outputs can still overshoot that range.
   }
   return state;
 }

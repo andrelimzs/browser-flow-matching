@@ -28,11 +28,13 @@ export const PUSHER_RADIUS = 0.022;
 export const WALL_THICKNESS = 0.028;
 export const MAX_PUSHER_SPEED = 0.017;
 export const SUCCESS_COVERAGE = 0.9;
-// Keep the task distribution intentionally simple while the learned policy is
-// being brought up: the block always begins in the lower-left quadrant and the
-// goal always sits in the upper-right. Angles still vary over the full circle.
+// Keep the zero-obstacle task fully fixed while the learned policy is brought
+// up. The broader region constants remain for obstacle experiments.
 export const BLOCK_START_MAX = 0.4;
 export const GOAL_START_MIN = 0.6;
+export const FIXED_BLOCK_START = Object.freeze({ x: 0.28, y: 0.28, angle: 0 });
+export const FIXED_GOAL = Object.freeze({ x: 0.72, y: 0.72, angle: 0 });
+export const FIXED_PUSHER_START = Object.freeze({ x: 0.14, y: 0.14 });
 
 const SUBSTEPS = 4;
 const SOLVER_ITERATIONS = 6;
@@ -120,6 +122,14 @@ export class PushWorld {
     const random = this.random;
     const count = options.obstacleCount ?? this.obstacleCount;
     this.obstacleCount = count;
+    if (count === 0) {
+      return this.commit({
+        block: { ...FIXED_BLOCK_START },
+        goal: { ...FIXED_GOAL },
+        pusher: { ...FIXED_PUSHER_START },
+        obstacles: [],
+      });
+    }
     const bounds = insetBounds();
     const margin = TEE.radius + 0.01;
     const separation = minimumSeparation(count);

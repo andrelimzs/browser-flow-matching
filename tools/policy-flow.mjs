@@ -13,8 +13,8 @@ const OBSTACLES = Number(process.env.OBSTACLES ?? 0);
 const EXECUTE = Number(process.env.EXECUTE ?? 16);
 const EULER = Number(process.env.EULER ?? 10);
 const CAP = 900;
-const LIFT_ON = Number(process.env.LIFT_ON ?? 0.4);
-const LIFT_OFF = Number(process.env.LIFT_OFF ?? -0.4);
+const LIFT_ON = Number(process.env.LIFT_ON ?? 0.65);
+const LIFT_OFF = Number(process.env.LIFT_OFF ?? 0.35);
 
 const random = createRandom(1717);
 const world = new PushWorld({ random, obstacleCount: OBSTACLES });
@@ -42,7 +42,7 @@ function collect(n) {
 
 const train = collect(EPISODES).filter((e) => e.success);
 const dataset = buildDataset(train);
-console.log(`${train.length} solved episodes, ${dataset.count.toLocaleString()} transitions, obs ${dataset.observationSize} egocentric dims`);
+console.log(`${train.length} solved episodes, ${dataset.count.toLocaleString()} transitions, obs ${dataset.observationSize} normalized dims`);
 
 const policy = makePolicy({ observationSize: dataset.observationSize, width: WIDTH, maxBatch: 256, random });
 const trainer = new PolicyTrainer({ policy, batch: 256, learningRate: 0.002, random });
