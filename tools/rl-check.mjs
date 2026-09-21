@@ -125,15 +125,15 @@ if (worst > 2e-4) throw new Error(`critic input-gradient mismatch ${worst}`);
 // actor-through-critic gradient wiring. They are not expected to solve the task
 // in a few hundred interactions.
 const ppo = trainPPO({
-  env: new PushTRLEnv({ seed: 20, horizon: 80 }),
+  envs: Array.from({ length: 4 }, (_, index) => new PushTRLEnv({ seed: 20 + index, horizon: 80 })),
   random: createRandom(21),
   totalSteps: 256,
   rolloutSteps: 128,
   epochs: 1,
-  batchSize: 32,
+  batchSize: 64,
   width: 16,
 });
-console.log(`PPO smoke: ${ppo.steps} steps, finite ${finiteModel(ppo.actor) && finiteModel(ppo.critic)}`);
+console.log(`PPO smoke: ${ppo.steps} steps across 4 envs, finite ${finiteModel(ppo.actor) && finiteModel(ppo.critic)}`);
 if (!finiteModel(ppo.actor) || !finiteModel(ppo.critic)) throw new Error("PPO produced non-finite parameters");
 const recordedRollout = recordPolicyRollout(ppo.actor, new PushTRLEnv({ seed: 22, horizon: 80 }));
 console.log(`recorded rollout: ${recordedRollout.count} frames, ${recordedRollout.frames.length} values`);

@@ -58,7 +58,7 @@ function fillCriticInput(buffer, observations, actions, indices, batch) {
 export function trainSAC({
   env,
   random,
-  totalSteps = 200_000,
+  totalSteps = 100_000,
   width = 128,
   batchSize = 128,
   replayCapacity = 100_000,

@@ -93,15 +93,21 @@
             </div>
 
             <div class="rl-setting">
-              <div><span>Training budget</span><output id="budgetOutput">10k</output></div>
-              <input id="budgetSlider" type="range" min="1" max="3" step="1" value="1" />
-              <div class="range-ends"><span>10k</span><span>50k</span><span>100k</span></div>
+              <div><span>Training budget</span><output id="budgetOutput">100k</output></div>
+              <input id="budgetSlider" type="range" min="4" max="6" step="0.1" value="5" aria-label="Training budget on a logarithmic scale" />
+              <div class="range-ends"><span>10k</span><span>1M</span></div>
             </div>
 
             <div class="rl-setting">
-              <div><span>Episode horizon</span><output id="horizonOutput">600</output></div>
-              <input id="horizonSlider" type="range" min="200" max="1000" step="100" value="600" />
+              <div><span>Episode horizon</span><output id="horizonOutput">200</output></div>
+              <input id="horizonSlider" type="range" min="200" max="1000" step="100" value="200" />
               <div class="range-ends"><span>200</span><span>1,000</span></div>
+            </div>
+
+            <div class="rl-setting">
+              <div><span id="entropyLabel">Entropy bonus</span><output id="entropyOutput">0.020</output></div>
+              <input id="entropySlider" type="range" min="0" max="0.1" step="0.005" value="0.02" aria-label="Entropy bonus" />
+              <div class="range-ends"><span id="entropyMin">0</span><span id="entropyMax">0.10</span></div>
             </div>
 
             <div class="solver-setting">

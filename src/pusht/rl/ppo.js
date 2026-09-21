@@ -17,8 +17,9 @@ import { RL_ACTION_SIZE, RL_OBSERVATION_SIZE } from "./env.js";
 
 export function trainPPO({
   env,
+  envs,
   random,
-  totalSteps = 200_000,
+  totalSteps = 100_000,
   rolloutSteps = 2048,
   epochs = 10,
   batchSize = 64,
@@ -31,6 +32,10 @@ export function trainPPO({
   criticLearningRate = 1e-3,
   onProgress = () => {},
 } = {}) {
+  const environments = envs ?? (env ? [env] : []);
+  if (!environments.length) throw new Error("PPO needs at least one environment");
+  if (environments.length > batchSize) throw new Error("PPO environment count cannot exceed batch size");
+  const environmentCount = environments.length;
   const actor = makeActor(RL_OBSERVATION_SIZE, width, batchSize, random);
   const critic = makeValue(RL_OBSERVATION_SIZE, width, batchSize, random);
   const actorOptimizer = new Adam(actor.params, { learningRate: actorLearningRate });
@@ -46,11 +51,18 @@ export function trainPPO({
   const advantages = new Float32Array(rolloutSteps);
   const returns = new Float32Array(rolloutSteps);
   const order = new Int32Array(rolloutSteps);
+  const environmentIndices = new Uint16Array(rolloutSteps);
   const actorGradient = new Float32Array(batchSize * 4);
   const criticGradient = new Float32Array(batchSize);
-  const action = new Float32Array(2);
+  const actionsByEnvironment = Array.from({ length: environmentCount }, () => new Float32Array(2));
+  const currentObservations = new Float32Array(environmentCount * RL_OBSERVATION_SIZE);
+  const bootstrapValues = new Float32Array(environmentCount);
+  const nextValues = new Float32Array(environmentCount);
+  const nextAdvantages = new Float32Array(environmentCount);
 
-  let observation = Float32Array.from(env.reset());
+  for (let environment = 0; environment < environmentCount; environment++) {
+    currentObservations.set(environments[environment].reset(), environment * RL_OBSERVATION_SIZE);
+  }
   let steps = 0;
   let episodes = 0;
   let successes = 0;
@@ -58,47 +70,73 @@ export function trainPPO({
   while (steps < totalSteps) {
     const count = Math.min(rolloutSteps, totalSteps - steps);
     let rolloutSuccesses = 0;
-    for (let index = 0; index < count; index++) {
-      observations.set(observation, index * RL_OBSERVATION_SIZE);
-
-      actor.inputBuffer().set(observation, 0);
-      const actorOutput = actor.forward(1);
-      const sample = actorSample(actorOutput, 0, random);
-      action[0] = sample.actionX;
-      action[1] = sample.actionY;
-      actions[index * 2] = action[0];
-      actions[index * 2 + 1] = action[1];
-      preSquash[index * 2] = sample.zX;
-      preSquash[index * 2 + 1] = sample.zY;
-      oldLogProbabilities[index] = sample.logProbability;
-
-      critic.inputBuffer().set(observation, 0);
-      values[index] = critic.forward(1)[0];
-
-      const transition = env.step(action);
-      rewards[index] = transition.reward;
-      dones[index] = transition.done ? 1 : 0;
-      observation = Float32Array.from(transition.observation);
-      if (transition.done) {
-        episodes += 1;
-        if (transition.success) { successes += 1; rolloutSuccesses += 1; }
-        observation = Float32Array.from(env.reset());
+    let cursor = 0;
+    while (cursor < count) {
+      const active = Math.min(environmentCount, count - cursor);
+      for (let environment = 0; environment < active; environment++) {
+        const observationOffset = environment * RL_OBSERVATION_SIZE;
+        actor.inputBuffer().set(
+          currentObservations.subarray(observationOffset, observationOffset + RL_OBSERVATION_SIZE),
+          observationOffset,
+        );
+        critic.inputBuffer().set(
+          currentObservations.subarray(observationOffset, observationOffset + RL_OBSERVATION_SIZE),
+          observationOffset,
+        );
       }
+      const actorOutput = actor.forward(active);
+      const criticOutput = critic.forward(active);
+      for (let environment = 0; environment < active; environment++) {
+        const index = cursor + environment;
+        const observationOffset = environment * RL_OBSERVATION_SIZE;
+        observations.set(
+          currentObservations.subarray(observationOffset, observationOffset + RL_OBSERVATION_SIZE),
+          index * RL_OBSERVATION_SIZE,
+        );
+        environmentIndices[index] = environment;
+        const sample = actorSample(actorOutput, environment * 4, random);
+        const action = actionsByEnvironment[environment];
+        action[0] = sample.actionX;
+        action[1] = sample.actionY;
+        actions[index * 2] = action[0];
+        actions[index * 2 + 1] = action[1];
+        preSquash[index * 2] = sample.zX;
+        preSquash[index * 2 + 1] = sample.zY;
+        oldLogProbabilities[index] = sample.logProbability;
+        values[index] = criticOutput[environment];
+
+        const transition = environments[environment].step(action);
+        rewards[index] = transition.reward;
+        dones[index] = transition.done ? 1 : 0;
+        const nextObservation = transition.done ? environments[environment].reset() : transition.observation;
+        currentObservations.set(nextObservation, observationOffset);
+        if (transition.done) {
+          episodes += 1;
+          if (transition.success) { successes += 1; rolloutSuccesses += 1; }
+        }
+      }
+      cursor += active;
     }
 
-    let bootstrap = 0;
-    if (!dones[count - 1]) {
-      critic.inputBuffer().set(observation, 0);
-      bootstrap = critic.forward(1)[0];
+    for (let environment = 0; environment < environmentCount; environment++) {
+      const observationOffset = environment * RL_OBSERVATION_SIZE;
+      critic.inputBuffer().set(
+        currentObservations.subarray(observationOffset, observationOffset + RL_OBSERVATION_SIZE),
+        observationOffset,
+      );
     }
-    let gae = 0;
+    bootstrapValues.set(critic.forward(environmentCount).subarray(0, environmentCount));
+    nextValues.set(bootstrapValues);
+    nextAdvantages.fill(0);
     for (let index = count - 1; index >= 0; index--) {
+      const environment = environmentIndices[index];
       const nonterminal = dones[index] ? 0 : 1;
-      const nextValue = index === count - 1 ? bootstrap : values[index + 1];
-      const delta = rewards[index] + gamma * nextValue * nonterminal - values[index];
-      gae = delta + gamma * gaeLambda * nonterminal * gae;
-      advantages[index] = gae;
-      returns[index] = gae + values[index];
+      const delta = rewards[index] + gamma * nextValues[environment] * nonterminal - values[index];
+      nextAdvantages[environment] = delta +
+        gamma * gaeLambda * nonterminal * nextAdvantages[environment];
+      advantages[index] = nextAdvantages[environment];
+      returns[index] = advantages[index] + values[index];
+      nextValues[environment] = values[index];
     }
 
     let advantageMean = 0;

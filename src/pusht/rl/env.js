@@ -25,7 +25,7 @@ const PUSHER_WALL_MAX = 1 - PUSHER_WALL_MIN;
 const WALL_EPSILON = 1e-9;
 
 export class PushTRLEnv {
-  constructor({ seed = 1, horizon = 600, distanceRewardScale = 1, orientationRewardScale = 1 } = {}) {
+  constructor({ seed = 1, horizon = 200, distanceRewardScale = 1, orientationRewardScale = 1 } = {}) {
     this.random = createRandom(seed);
     this.world = new PushWorld({ random: this.random, obstacleCount: 0 });
     this.horizon = horizon;

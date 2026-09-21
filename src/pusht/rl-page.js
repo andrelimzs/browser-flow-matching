@@ -4,14 +4,20 @@ import { PushWorld, createRandom } from "./sim.js";
 import { createView } from "./render.js";
 
 const $ = (selector) => document.querySelector(selector);
-const budgets = [10_000, 50_000, 100_000];
 const ROLLOUT_FRAME_SIZE = 10;
+const BUDGET_MIN = 10_000;
+const BUDGET_MAX = 1_000_000;
+const entropyConfigs = {
+  ppo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
+  sac: { label: "Temperature α", min: 0, max: 0.5, step: 0.01, digits: 2 },
+};
 const world = new PushWorld({ random: createRandom(41), obstacleCount: 0 });
 const view = createView($("#arena"));
 const state = {
   algorithm: "ppo",
-  budget: budgets[0],
-  horizon: 600,
+  budget: 100_000,
+  horizon: 200,
+  entropyByAlgorithm: { ppo: 0.02, sac: 0.3 },
   width: 128,
   seed: 2026,
   worker: null,
@@ -34,6 +40,7 @@ function setTraining(active, label = active ? "Training" : "Idle") {
   $("#stopButton").disabled = !active;
   $("#budgetSlider").disabled = active;
   $("#horizonSlider").disabled = active;
+  $("#entropySlider").disabled = active;
   document.querySelectorAll("[data-algorithm], [data-width]").forEach((button) => {
     button.disabled = active;
   });
@@ -45,6 +52,29 @@ function setTraining(active, label = active ? "Training" : "Idle") {
 
 function formatReturn(value) {
   return Number.isFinite(value) ? value.toFixed(3) : "—";
+}
+
+function formatBudget(value) {
+  if (value >= 1_000_000) return `${value / 1_000_000}M`;
+  return `${Math.round(value / 1000)}k`;
+}
+
+function budgetFromExponent(exponent) {
+  return Math.round(10 ** exponent / 1000) * 1000;
+}
+
+function updateEntropyControl() {
+  const config = entropyConfigs[state.algorithm];
+  const slider = $("#entropySlider");
+  slider.min = String(config.min);
+  slider.max = String(config.max);
+  slider.step = String(config.step);
+  slider.value = String(state.entropyByAlgorithm[state.algorithm]);
+  slider.setAttribute("aria-label", config.label);
+  $("#entropyLabel").textContent = config.label;
+  $("#entropyOutput").textContent = state.entropyByAlgorithm[state.algorithm].toFixed(config.digits);
+  $("#entropyMin").textContent = String(config.min);
+  $("#entropyMax").textContent = config.max.toFixed(config.digits === 3 ? 2 : 1);
 }
 
 function drawReturnChart() {
@@ -221,6 +251,7 @@ function startTraining() {
     totalSteps: state.budget,
     width: state.width,
     horizon: state.horizon,
+    entropyBonus: state.entropyByAlgorithm[state.algorithm],
     seed: state.seed,
   });
 }
@@ -285,38 +316,48 @@ function registerWebMcpTools() {
       type: "object",
       properties: {
         algorithm: { type: "string", enum: ["ppo", "sac"] },
-        budget: { type: "integer", enum: budgets },
+        budget: { type: "integer", minimum: BUDGET_MIN, maximum: BUDGET_MAX },
         horizon: { type: "integer", minimum: 200, maximum: 1000, multipleOf: 100 },
         width: { type: "integer", enum: [64, 128] },
+        entropyBonus: { type: "number", minimum: 0, maximum: 0.5 },
       },
-      required: ["algorithm", "budget", "horizon", "width"],
+      required: ["algorithm", "budget", "horizon", "width", "entropyBonus"],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, untrustedContentHint: false },
     execute(input) {
       if (!input || typeof input !== "object") throw new TypeError("Training configuration is required.");
       if (!["ppo", "sac"].includes(input.algorithm)) throw new RangeError("Algorithm must be ppo or sac.");
-      if (!budgets.includes(input.budget)) throw new RangeError("Budget must be 10000, 50000, or 100000.");
+      if (!Number.isInteger(input.budget) || input.budget < BUDGET_MIN || input.budget > BUDGET_MAX) {
+        throw new RangeError("Budget must be an integer from 10000 through 1000000.");
+      }
       if (!Number.isInteger(input.horizon) || input.horizon < 200 || input.horizon > 1000 || input.horizon % 100) {
         throw new RangeError("Horizon must be a multiple of 100 from 200 through 1000.");
       }
       if (![64, 128].includes(input.width)) throw new RangeError("Width must be 64 or 128.");
+      const entropyConfig = entropyConfigs[input.algorithm];
+      if (typeof input.entropyBonus !== "number" || !Number.isFinite(input.entropyBonus) ||
+        input.entropyBonus < entropyConfig.min || input.entropyBonus > entropyConfig.max) {
+        throw new RangeError(`Entropy must be from ${entropyConfig.min} through ${entropyConfig.max} for ${input.algorithm}.`);
+      }
       if (state.training) throw new Error("A training run is already active.");
 
       state.algorithm = input.algorithm;
       state.budget = input.budget;
       state.horizon = input.horizon;
       state.width = input.width;
+      state.entropyByAlgorithm[state.algorithm] = input.entropyBonus;
       document.querySelectorAll("[data-algorithm]").forEach((button) => {
         button.setAttribute("aria-pressed", String(button.dataset.algorithm === state.algorithm));
       });
       document.querySelectorAll("[data-width]").forEach((button) => {
         button.setAttribute("aria-pressed", String(Number(button.dataset.width) === state.width));
       });
-      $("#budgetSlider").value = String(budgets.indexOf(state.budget) + 1);
-      $("#budgetOutput").textContent = `${state.budget / 1000}k`;
+      $("#budgetSlider").value = String(Math.log10(state.budget));
+      $("#budgetOutput").textContent = formatBudget(state.budget);
       $("#horizonSlider").value = String(state.horizon);
       $("#horizonOutput").textContent = state.horizon.toLocaleString();
+      updateEntropyControl();
       startTraining();
       return { status: "training", algorithm: state.algorithm, budget: state.budget };
     },
@@ -333,6 +374,9 @@ function registerWebMcpTools() {
       return {
         status: state.training ? "training" : "idle",
         algorithm: state.algorithm,
+        budget: state.budget,
+        horizon: state.horizon,
+        entropyBonus: state.entropyByAlgorithm[state.algorithm],
         loggedRollouts: state.rollouts.length,
         latestStep: state.rollouts.at(-1)?.step ?? 0,
         selectedRollout: selected ? {
@@ -367,6 +411,7 @@ document.querySelectorAll("[data-algorithm]").forEach((button) => {
     document.querySelectorAll("[data-algorithm]").forEach((option) => {
       option.setAttribute("aria-pressed", String(option === button));
     });
+    updateEntropyControl();
   });
 });
 
@@ -380,12 +425,17 @@ document.querySelectorAll("[data-width]").forEach((button) => {
 });
 
 $("#budgetSlider").addEventListener("input", (event) => {
-  state.budget = budgets[Number(event.target.value) - 1];
-  $("#budgetOutput").textContent = `${state.budget / 1000}k`;
+  state.budget = budgetFromExponent(Number(event.target.value));
+  $("#budgetOutput").textContent = formatBudget(state.budget);
 });
 $("#horizonSlider").addEventListener("input", (event) => {
   state.horizon = Number(event.target.value);
   $("#horizonOutput").textContent = state.horizon.toLocaleString();
+});
+$("#entropySlider").addEventListener("input", (event) => {
+  const config = entropyConfigs[state.algorithm];
+  state.entropyByAlgorithm[state.algorithm] = Number(event.target.value);
+  $("#entropyOutput").textContent = state.entropyByAlgorithm[state.algorithm].toFixed(config.digits);
 });
 $("#rolloutSlider").addEventListener("input", (event) => {
   selectRollout(Number(event.target.value));
@@ -399,5 +449,6 @@ window.addEventListener("beforeunload", () => {
   webMcpLifecycle?.abort();
 });
 
+updateEntropyControl();
 resetRun();
 requestAnimationFrame(draw);

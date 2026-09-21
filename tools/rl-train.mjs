@@ -1,7 +1,7 @@
 // Train a sparse-reward single-frame Push-T policy with PPO or SAC.
 //
-//   node tools/rl-train.mjs ppo 200000
-//   node tools/rl-train.mjs sac 200000
+//   node tools/rl-train.mjs ppo 100000
+//   node tools/rl-train.mjs sac 100000
 //
 // Optional environment variables: SEED, WIDTH, HORIZON, OUT.
 
@@ -13,10 +13,10 @@ import { trainPPO } from "../src/pusht/rl/ppo.js";
 import { trainSAC } from "../src/pusht/rl/sac.js";
 
 const algorithm = (process.argv[2] ?? "ppo").toLowerCase();
-const totalSteps = Number(process.argv[3] ?? 200_000);
+const totalSteps = Number(process.argv[3] ?? 100_000);
 const seed = Number(process.env.SEED ?? 2026);
 const width = Number(process.env.WIDTH ?? 128);
-const horizon = Number(process.env.HORIZON ?? 600);
+const horizon = Number(process.env.HORIZON ?? 200);
 if (!Number.isInteger(totalSteps) || totalSteps < 1) throw new Error(`invalid total steps: ${process.argv[3]}`);
 if (algorithm !== "ppo" && algorithm !== "sac") throw new Error(`algorithm must be ppo or sac, got ${algorithm}`);
 

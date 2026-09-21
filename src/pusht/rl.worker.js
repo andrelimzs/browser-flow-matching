@@ -7,8 +7,10 @@ import { trainSAC } from "./rl/sac.js";
 self.onmessage = ({ data }) => {
   if (data.type !== "start") return;
 
-  const { algorithm, totalSteps, width, horizon, seed } = data;
+  const { algorithm, totalSteps, width, horizon, entropyBonus, seed } = data;
   const env = new PushTRLEnv({ seed, horizon });
+  const ppoEnvs = Array.from({ length: 4 }, (_, index) =>
+    index === 0 ? env : new PushTRLEnv({ seed: seed + index, horizon }));
   const random = createRandom(seed + 20_000);
 
   const onProgress = (progress, models) => {
@@ -32,16 +34,20 @@ self.onmessage = ({ data }) => {
         env,
         totalSteps,
         width,
+        alpha: entropyBonus,
+        batchSize: 256,
         progressEvery: 200,
         random,
         onProgress,
       });
     } else {
       trainPPO({
-        env,
+        envs: ppoEnvs,
         totalSteps,
         width,
+        entropyCoefficient: entropyBonus,
         rolloutSteps: 200,
+        batchSize: 128,
         random,
         onProgress,
       });
