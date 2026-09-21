@@ -8,6 +8,7 @@ import {
 } from "../src/pusht/sim.js";
 import { ScriptedExpert } from "../src/pusht/expert.js";
 import {
+  CURRICULUM_INITIAL_BEARING_SPREAD,
   CURRICULUM_INITIAL_DISTANCE_FRACTION,
   cartesianActionToDelta,
   MAX_STATIONARY_STEPS,
@@ -209,7 +210,7 @@ if (Math.abs(awayTransition.reward + 0.01) > 1e-6) {
 }
 
 // The block starts near the goal, moves to the final task radius by 70%, and
-// gets a randomized valid bearing while holding the scheduled radius exact.
+// narrows its block-to-goal bearing from a ±15° arc to the nominal 45°.
 const curriculumEnv = new PushTRLEnv({ seed: 9 });
 const finalDistance = Math.hypot(
   FIXED_BLOCK_START.x - curriculumEnv.world.goal.x,
@@ -219,11 +220,15 @@ const initialPusherDistance = Math.hypot(
   FIXED_PUSHER_START.x - FIXED_BLOCK_START.x,
   FIXED_PUSHER_START.y - FIXED_BLOCK_START.y,
 );
-const curriculumPositions = [];
-const checkCurriculumDistance = (progress, expectedFraction) => {
+const nominalBearing = Math.atan2(
+  curriculumEnv.world.goal.y - FIXED_BLOCK_START.y,
+  curriculumEnv.world.goal.x - FIXED_BLOCK_START.x,
+);
+const angleDelta = (angle, reference) =>
+  Math.atan2(Math.sin(angle - reference), Math.cos(angle - reference));
+const checkCurriculumDistance = (progress, expectedFraction, expectedSpreadFraction) => {
   curriculumEnv.setTrainingProgress(progress);
   curriculumEnv.reset();
-  curriculumPositions.push([curriculumEnv.world.block.x, curriculumEnv.world.block.y]);
   if (Math.abs(curriculumEnv.blockGoalDistance() - finalDistance * expectedFraction) > 1e-9) {
     throw new Error(`wrong curriculum distance at progress ${progress}`);
   }
@@ -237,14 +242,37 @@ const checkCurriculumDistance = (progress, expectedFraction) => {
   if (Math.abs(pusherDistance - initialPusherDistance) > 1e-9) {
     throw new Error(`wrong pusher distance at progress ${progress}`);
   }
+  const bearing = Math.atan2(
+    curriculumEnv.world.goal.y - curriculumEnv.world.block.y,
+    curriculumEnv.world.goal.x - curriculumEnv.world.block.x,
+  );
+  const maxOffset = CURRICULUM_INITIAL_BEARING_SPREAD * expectedSpreadFraction;
+  if (Math.abs(angleDelta(bearing, nominalBearing)) > maxOffset + 1e-9) {
+    throw new Error(`wrong curriculum bearing at progress ${progress}`);
+  }
+  if (Math.abs(curriculumEnv.curriculumBearingSpread() - maxOffset) > 1e-12) {
+    throw new Error(`wrong curriculum bearing spread at progress ${progress}`);
+  }
 };
-checkCurriculumDistance(0, CURRICULUM_INITIAL_DISTANCE_FRACTION);
-checkCurriculumDistance(0.35, (1 + CURRICULUM_INITIAL_DISTANCE_FRACTION) / 2);
-checkCurriculumDistance(0.7, 1);
-checkCurriculumDistance(1, 1);
-const distinctBearings = new Set(curriculumPositions.map(([x, y]) =>
-  Math.atan2(y - curriculumEnv.world.goal.y, x - curriculumEnv.world.goal.x).toFixed(6)));
-if (distinctBearings.size < 2) throw new Error("curriculum did not randomize block bearing");
+checkCurriculumDistance(0, CURRICULUM_INITIAL_DISTANCE_FRACTION, 1);
+checkCurriculumDistance(0.35, (1 + CURRICULUM_INITIAL_DISTANCE_FRACTION) / 2, 0.5);
+checkCurriculumDistance(0.7, 1, 0);
+checkCurriculumDistance(1, 1, 0);
+curriculumEnv.setTrainingProgress(0);
+const initialBearingOffsets = new Set();
+for (let episode = 0; episode < 16; episode++) {
+  curriculumEnv.reset();
+  const bearing = Math.atan2(
+    curriculumEnv.world.goal.y - curriculumEnv.world.block.y,
+    curriculumEnv.world.goal.x - curriculumEnv.world.block.x,
+  );
+  const offset = angleDelta(bearing, nominalBearing);
+  if (Math.abs(offset) > CURRICULUM_INITIAL_BEARING_SPREAD + 1e-9) {
+    throw new Error("initial curriculum bearing escaped the ±15° arc");
+  }
+  initialBearingOffsets.add(offset.toFixed(6));
+}
+if (initialBearingOffsets.size < 2) throw new Error("curriculum did not randomize within its bearing arc");
 const noCurriculumEnv = new PushTRLEnv({ seed: 9, curriculum: false });
 noCurriculumEnv.setTrainingProgress(0);
 noCurriculumEnv.reset();
@@ -255,7 +283,7 @@ if (noCurriculumEnv.world.block.x !== FIXED_BLOCK_START.x ||
 if (noCurriculumEnv.episodeHorizon !== noCurriculumEnv.horizon) {
   throw new Error("disabled curriculum did not preserve the full episode horizon");
 }
-console.log("curriculum: randomized bearing and matched pusher gap, near radius at 0%, final radius at 70%");
+console.log("curriculum: bearing narrows from ±15° to nominal 45°, with matched pusher gap and horizon");
 
 // Environment contract: every shaping term is signed transition progress, and
 // all enabled reward components sum exactly.

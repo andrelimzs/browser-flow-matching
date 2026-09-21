@@ -107,10 +107,11 @@ Both deliberately use the same minimal task definition:
 - episode horizon: 200 steps by default
 
 With the position curriculum enabled (the browser default), the block begins at 25% of the original
-block-to-goal distance. Each episode randomizes the block's valid in-arena bearing around the goal while
-holding that scheduled distance fixed. The pusher moves with it, directly behind the block relative to
-the goal and at the original block–pusher separation. The radius expands linearly, reaches the original
-full-task distance at 70%, and stays there for the remaining 30%. The browser control can disable the
+block-to-goal distance. Its block-to-goal direction starts uniformly randomized within ±15° of the
+nominal 45° direction, then narrows linearly to exactly 45° at 70% progress while holding the scheduled
+distance fixed. The pusher moves with it, directly behind the block relative to the goal and at the
+original block–pusher separation. The radius expands linearly, reaches the original full-task distance
+at 70%, and stays there for the remaining 30%. The browser control can disable the
 curriculum to train on the original fixed start from the first episode. While the curriculum is enabled,
 the active episode horizon uses the same fraction: it begins at 25% of the selected maximum, reaches the
 full horizon at 70% training progress, and remains there.

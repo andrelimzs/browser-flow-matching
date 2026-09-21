@@ -24,6 +24,7 @@ export const RL_OBSERVATION_SIZE = 11;
 export const RL_ACTION_SIZE = 2;
 export const CURRICULUM_FINAL_PROGRESS = 0.7;
 export const CURRICULUM_INITIAL_DISTANCE_FRACTION = 0.25;
+export const CURRICULUM_INITIAL_BEARING_SPREAD = 15 * Math.PI / 180;
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const rewardWeight = (value, fallback) => Number.isFinite(value) ? value : fallback;
@@ -51,6 +52,10 @@ const BLOCK_MAX_Y = 1 - WALL_THICKNESS - Math.max(...TEE.parts.map((part) => par
 const FINAL_BLOCK_GOAL_DISTANCE = Math.hypot(
   FIXED_BLOCK_START.x - FIXED_GOAL.x,
   FIXED_BLOCK_START.y - FIXED_GOAL.y,
+);
+const NOMINAL_BLOCK_BEARING = Math.atan2(
+  FIXED_BLOCK_START.y - FIXED_GOAL.y,
+  FIXED_BLOCK_START.x - FIXED_GOAL.x,
 );
 const PUSHER_BLOCK_START_DISTANCE = Math.hypot(
   FIXED_PUSHER_START.x - FIXED_BLOCK_START.x,
@@ -122,9 +127,16 @@ export class PushTRLEnv {
       (1 - CURRICULUM_INITIAL_DISTANCE_FRACTION) * stage;
   }
 
+  curriculumBearingSpread() {
+    if (!this.curriculum) return 0;
+    const stage = clamp(this.trainingProgress / CURRICULUM_FINAL_PROGRESS, 0, 1);
+    return CURRICULUM_INITIAL_BEARING_SPREAD * (1 - stage);
+  }
+
   randomizeBlockPosition(distance) {
+    const bearingSpread = this.curriculumBearingSpread();
     for (let attempt = 0; attempt < 256; attempt++) {
-      const bearing = this.random() * Math.PI * 2;
+      const bearing = NOMINAL_BLOCK_BEARING + (this.random() * 2 - 1) * bearingSpread;
       const directionX = Math.cos(bearing);
       const directionY = Math.sin(bearing);
       const x = this.world.goal.x + directionX * distance;
