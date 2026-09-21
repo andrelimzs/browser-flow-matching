@@ -15,6 +15,11 @@ const world = new PushWorld({ random, obstacleCount: 2 });
 console.log("tee: unit", BLOCK_UNIT, "area", TEE.area.toFixed(5), "radius", TEE.radius.toFixed(4));
 console.log("characteristic c^2", TEE.characteristicSquared.toFixed(6), "c", Math.sqrt(TEE.characteristicSquared).toFixed(4));
 
+const liftProbe = new PushWorld({ random: createRandom(8), obstacleCount: 0 });
+liftProbe.step(liftProbe.pusher.x, liftProbe.pusher.y, 1);
+console.log("lift disabled:", !liftProbe.lifted);
+if (liftProbe.lifted) throw new Error("lift command took effect during the no-lift ablation");
+
 let worst = { finite: true, minX: 1, maxX: 0, minY: 1, maxY: 0 };
 let moved = 0;
 let layoutsInRegions = true;

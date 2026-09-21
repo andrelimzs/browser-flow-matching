@@ -202,6 +202,32 @@ export class MLP {
     }
   }
 
+  // Gradient of the most recent backward pass with respect to the network
+  // input. This is needed by actor-critic methods such as SAC, where the actor
+  // follows dQ/da through a critic whose action is part of its input.
+  inputGradients(batch = this.batch, out = new Float32Array(batch * this.inputWidth)) {
+    if (batch !== this.batch) {
+      throw new Error(`input-gradient batch ${batch} does not match the last forward batch ${this.batch}`);
+    }
+    const inputs = this.inputWidth;
+    const outputs = this.sizes[1];
+    const weights = this.weights[0];
+    const delta = this.deltas[0];
+    out.fill(0, 0, batch * inputs);
+    for (let sample = 0; sample < batch; sample++) {
+      const inputOffset = sample * inputs;
+      const deltaOffset = sample * outputs;
+      for (let unit = 0; unit < outputs; unit++) {
+        const value = delta[deltaOffset + unit];
+        const weightOffset = unit * inputs;
+        for (let index = 0; index < inputs; index++) {
+          out[inputOffset + index] += weights[weightOffset + index] * value;
+        }
+      }
+    }
+    return out;
+  }
+
   // Flat copy of every parameter, for handing weights across a worker boundary
   // mid-training. Measured at 0.019 ms against a 20.7 ms training step, against
   // 2.87 ms for the toJSON path, so this is what a live snapshot should use.

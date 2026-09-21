@@ -25,7 +25,7 @@ for (let episode = 0; episode < 12; episode++) {
     if (world.coverage() >= SUCCESS_COVERAGE) break;
     const observation = world.writeObservation();
     const [x, y, lift] = expert.act(world);
-    store.record(observation, x, y);
+    store.record(observation, x, y, lift);
     world.step(x, y, lift);
   }
   store.end(world, { keep: true });
@@ -46,6 +46,9 @@ console.log("all finite:", finite);
 let inRange = true;
 for (let i = 0; i < dataset.actions.length; i++) if (dataset.actions[i] < -0.1 || dataset.actions[i] > 1.1) inRange = false;
 console.log("actions within arena bounds:", inRange);
+const allLiftOff = store.episodes.every((episode) => episode.actions.every((action) => action[2] === 0));
+console.log("all lift actions disabled:", allLiftOff);
+if (!allLiftOff) throw new Error("recorded a lifted action during the no-lift ablation");
 
 // Persistence round trip.
 store.persist();
@@ -64,7 +67,7 @@ for (const [obstacleCount, steps] of [[1, 20], [3, 20], [1, 20]]) {
   for (let i = 0; i < steps; i++) {
     const observation = w.writeObservation();
     const [x, y, lift] = e.act(w);
-    mixed.record(observation, x, y);
+    mixed.record(observation, x, y, lift);
     w.step(x, y);
   }
   mixed.end(w, { keep: true, minimumSteps: 1 });
@@ -81,11 +84,11 @@ for (let row = 0; row < mixedSet.count; row++) {
 console.log("  all-zero rows (0 = no padding corruption):", padded);
 
 // Malformed stored data must not take the page down on first render.
-window.localStorage.setItem("pusht-demos-v1", JSON.stringify({ version: 5, episodes: [{ source: "mouse" }, null, 7] }));
+window.localStorage.setItem("pusht-demos-v1", JSON.stringify({ version: 7, episodes: [{ source: "mouse" }, null, 7] }));
 const salvaged = new DemoStore().restore();
 console.log("  malformed storage dropped:", salvaged.episodes.length === 0, "and stats() survives:",
   (() => { try { salvaged.stats(); return true; } catch { return false; } })());
 
 // JSON payload size, since this is what a user downloads.
-const bytes = JSON.stringify({ version: 5, episodes: store.episodes }).length;
+const bytes = JSON.stringify({ version: 7, episodes: store.episodes }).length;
 console.log(`export size ${(bytes / 1024).toFixed(0)} KB for ${stats.steps} transitions (${(bytes / stats.steps).toFixed(0)} B/transition)`);

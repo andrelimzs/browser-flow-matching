@@ -1,4 +1,4 @@
-// Flow-matching policy on the simplest setting: no obstacles, lifting enabled.
+// Flow-matching policy on the simplest setting: no obstacles, lift disabled.
 // Evaluates from the training start poses first — if it cannot reproduce those,
 // generalization numbers mean nothing.
 // Usage: node tools/policy-flow.mjs [episodes] [steps] [width]
@@ -13,8 +13,6 @@ const OBSTACLES = Number(process.env.OBSTACLES ?? 0);
 const EXECUTE = Number(process.env.EXECUTE ?? 16);
 const EULER = Number(process.env.EULER ?? 10);
 const CAP = 900;
-const LIFT_ON = Number(process.env.LIFT_ON ?? 0.4);
-const LIFT_OFF = Number(process.env.LIFT_OFF ?? -0.4);
 
 const random = createRandom(1717);
 const world = new PushWorld({ random, obstacleCount: OBSTACLES });
@@ -60,22 +58,15 @@ function evaluate(episodes, label) {
   let wins = 0, coverage = 0;
   for (const ep of episodes) {
     world.restore(ep.initial);
-    let chunk = null, cursor = 1e9, lift = 0;
+    let chunk = null, cursor = 1e9;
     for (let s = 0; s < CAP; s++) {
       if (world.coverage() >= SUCCESS_COVERAGE) break;
       if (cursor >= EXECUTE) {
         chunk = sampleChunk(policy, world.writeObservation(), { steps: EULER, random, scales: dataset.scales });
         cursor = 0;
       }
-      // Hysteresis on lift: the raw per-step sign is wrong ~16% of the time,
-      // and an isolated flip is catastrophic (the pusher passes through the
-      // block instead of pushing it). Switching only on a confident value and
-      // holding otherwise turns those isolated errors into no-ops.
       const base = cursor * ACTION_DIM;
-      const raw = chunk[base + 2];
-      if (raw > LIFT_ON) lift = 1;
-      else if (raw < LIFT_OFF) lift = 0;
-      world.step(chunk[base], chunk[base + 1], lift);
+      world.step(chunk[base], chunk[base + 1], 0);
       cursor += 1;
     }
     coverage += world.coverage();

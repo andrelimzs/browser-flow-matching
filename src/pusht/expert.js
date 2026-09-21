@@ -17,10 +17,13 @@
 // is the whole reason this task is worth learning with flow matching.
 
 import { circleRectContact, clamp, toLocal, wrapAngle } from "./geometry.js";
-import { pathLength, planPath } from "./plan.js";
+import { pathLength, planPath, planPusherPath } from "./plan.js";
 import { MAX_PUSHER_SPEED, PUSHER_RADIUS, SUCCESS_COVERAGE, TEE, WALL_THICKNESS } from "./sim.js";
 
 const APPROACH_GAP = 0.004;
+const ORBIT_MARGIN = 0.02;
+const ORBIT_SQUEEZE = [1, 0.82, 0.66];
+const ORBIT_STEP = 0.22;
 const ARRIVAL_TOLERANCE = 0.012;
 const PUSH_STROKE_FAR = 0.06;
 const PUSH_STROKE_NEAR = 0.022;
@@ -37,6 +40,7 @@ const TRANSIT_ROTATION_SCALE = 0.35;
 const LOOKAHEAD = 0.16;
 const REPLAN_INTERVAL = 70;
 const PATH_DRIFT = 0.1;
+const PUSHER_REPLAN_INTERVAL = 30;
 // Two ways round an obstacle count as equally good below this cost ratio, and
 // the expert then picks at random. With the obstacle near the corridor centre
 // almost every layout qualifies; the gate only rejects the lopsided ones.
@@ -49,8 +53,6 @@ const SAMPLES_PER_UNIT = 90;
 // jumping the command between distant contact targets. The simulator already
 // caps speed; bounding acceleration here also makes the demonstrations smooth.
 const MAX_TARGET_ACCELERATION = 0.0035;
-const ORIENT_DONE = 0.14;
-const TRANSLATE_DONE = 0.1;
 
 const probe = { depth: 0, nx: 0, ny: 0, px: 0, py: 0 };
 const scratch = { x: 0, y: 0 };
@@ -58,13 +60,6 @@ const scratch = { x: 0, y: 0 };
 // Candidate contacts live in the block's local frame, so they are computed once
 // and reused for every episode.
 const CANDIDATES = buildCandidates();
-// Centred contact on the broad crossbar. With the pointed stem aimed toward the
-// goal, this is the stable trailing face for the entire translation phase.
-const CROSSBAR_CONTACT = (() => {
-  const y = TEE.parts[0].maxY;
-  return { x: 0, y, nx: 0, ny: 1, pusherX: 0, pusherY: y + PUSHER_RADIUS + APPROACH_GAP };
-})();
-
 function buildCandidates() {
   const candidates = [];
   for (const part of TEE.parts) {
@@ -115,29 +110,29 @@ export class ScriptedExpert {
   }
 
   reset() {
+    this.orbitRadius = TEE.radius + PUSHER_RADIUS + ORBIT_MARGIN;
     this.routeObstacle = null;
     this.routeSide = 0;
     this.routeSides = new Map();
     this.stuck = 0;
     this.path = null;
     this.replanIn = 0;
+    this.pusherPath = null;
+    this.pusherReplanIn = 0;
     this.state = "select";
     this.contact = null;
+    this.orbitSign = 1;
     this.pushSteps = 0;
     this.approachSteps = 0;
     this.bestCoverage = 0;
     this.stalled = 0;
-    this.phase = "orient";
-    this.transitAngle = null;
-    this.orientAnchor = null;
-    this.correctTransit = false;
+    this.phase = "translate";
     this.targetVelocityX = 0;
     this.targetVelocityY = 0;
   }
 
-  // Returns [x, y, lift] for this control step. Lifted, the pusher travels in a
-  // straight line to the next contact instead of walking around the block, so
-  // repositioning is no longer a navigation problem.
+  // Returns [x, y, 0]. Lift is temporarily disabled, so repositioning walks
+  // around the tee instead of passing over it.
   act(world) {
     const coverage = world.coverage();
     if (coverage >= SUCCESS_COVERAGE) return [world.pusher.x, world.pusher.y, 0];
@@ -382,47 +377,15 @@ export class ScriptedExpert {
     const errorAngle = wrapAngle(world.goal.angle - block.angle);
     const scale = Math.sqrt(TEE.characteristicSquared);
 
-    // With no obstacles, use a fixed curriculum instead of continuously
-    // trading translation against rotation. First turn the tee so its centred
-    // top/bottom face can drive directly toward the goal with little torque,
-    // then translate, then turn into the requested final pose.
-    if (world.obstacles.length === 0) {
-      const positionError = Math.hypot(errorX, errorY);
-      if (this.transitAngle === null) {
-        const heading = Math.atan2(errorY, errorX);
-        // Local -Y is the tee's pointed stem. Aim it toward the goal so the
-        // broad crossbar is the trailing face available to the pusher.
-        this.transitAngle = wrapAngle(heading + Math.PI / 2);
-        this.orientAnchor = { x: block.x, y: block.y };
-      }
-      const transitError = Math.abs(wrapAngle(this.transitAngle - block.angle));
-      if (this.phase === "translate") {
-        if (this.correctTransit && transitError < 0.1) this.correctTransit = false;
-        else if (!this.correctTransit && transitError > 0.28) this.correctTransit = true;
-      }
-      if (this.phase === "orient" && transitError < ORIENT_DONE) {
-        this.phase = "translate";
-        this.correctTransit = false;
-      }
-      if (this.phase === "translate" && positionError < TRANSLATE_DONE) this.phase = "align";
-    }
-
     const arriving = route.remaining < LOOKAHEAD * 1.5;
     let desiredX = errorX;
     let desiredY = errorY;
     let desiredSpin;
-    if (world.obstacles.length === 0 && this.phase === "orient") {
-      desiredX = this.orientAnchor.x - block.x;
-      desiredY = this.orientAnchor.y - block.y;
-      desiredSpin = wrapAngle(this.transitAngle - block.angle) * scale * this.rotationWeight * 1.5;
-    } else if (world.obstacles.length === 0 && this.phase === "translate") {
-      desiredSpin = wrapAngle(this.transitAngle - block.angle) * scale * this.rotationWeight;
-    } else if (world.obstacles.length === 0) {
-      // Final turns tend to displace the block, so position correction remains
-      // active while orientation is given extra weight.
-      desiredX *= 1.35;
-      desiredY *= 1.35;
-      desiredSpin = errorAngle * scale * this.rotationWeight * 1.5;
+    if (world.obstacles.length === 0) {
+      // Do not run an orient-first phase on the fixed task. Translation starts
+      // immediately; this term only corrects incidental angle drift while the
+      // block is already moving toward the zero-degree goal.
+      desiredSpin = errorAngle * scale * this.rotationWeight;
     } else {
       desiredSpin = errorAngle * scale * this.rotationWeight * (arriving ? 1 : TRANSIT_ROTATION_SCALE);
     }
@@ -434,9 +397,7 @@ export class ScriptedExpert {
 
     let best = null;
     let bestScore = -Infinity;
-    const candidates = world.obstacles.length === 0 && this.phase === "translate" && !this.correctTransit
-      ? [CROSSBAR_CONTACT]
-      : CANDIDATES;
+    const candidates = CANDIDATES;
     for (const candidate of candidates) {
       // Push direction is the inward surface normal, rotated into the world.
       const forceX = -(candidate.nx * cos - candidate.ny * sin);
@@ -474,17 +435,27 @@ export class ScriptedExpert {
     // back out to the orbit radius in that case wastes most of the episode, so
     // stay in contact whenever the new target is effectively where we are.
     const settled =
-      Math.hypot(world.pusher.x - best.approachX, world.pusher.y - best.approachY) < PUSHER_RADIUS * 1.5;
+      Math.hypot(world.pusher.x - best.approachX, world.pusher.y - best.approachY) < PUSHER_RADIUS * 1.5 &&
+      !this.segmentHitsBlock(world, world.pusher.x, world.pusher.y, best.approachX, best.approachY);
     if (settled) {
       this.state = "push";
       return;
     }
     this.state = "approach";
+    this.orbitSign = this.chooseOrbit(world, best);
+    this.pusherPath = null;
+    this.pusherReplanIn = 0;
   }
 
-  // With lifting, getting anywhere is a straight line.
+  // Penalize the actual walk around the tee when a straight segment is blocked.
   travelCost(world, targetX, targetY) {
-    return Math.hypot(world.pusher.x - targetX, world.pusher.y - targetY);
+    const direct = Math.hypot(world.pusher.x - targetX, world.pusher.y - targetY);
+    if (!this.segmentHitsBlock(world, world.pusher.x, world.pusher.y, targetX, targetY)) return direct;
+    const block = world.block;
+    const orbitRadius = this.orbitRadius ?? TEE.radius + PUSHER_RADIUS + ORBIT_MARGIN;
+    const from = Math.atan2(world.pusher.y - block.y, world.pusher.x - block.x);
+    const to = Math.atan2(targetY - block.y, targetX - block.x);
+    return Math.abs(wrapAngle(to - from)) * orbitRadius + orbitRadius;
   }
 
   reachable(world, x, y) {
@@ -494,9 +465,94 @@ export class ScriptedExpert {
     return !world.pusherBlocked(x, y);
   }
 
+  chooseOrbit(world, target) {
+    const block = world.block;
+    const from = Math.atan2(world.pusher.y - block.y, world.pusher.x - block.x);
+    const to = Math.atan2(target.approachY - block.y, target.approachX - block.x);
+    const full = TEE.radius + PUSHER_RADIUS + ORBIT_MARGIN;
+
+    for (const squeeze of ORBIT_SQUEEZE) {
+      const radius = full * squeeze;
+      const clockwiseClear = this.arcClear(world, from, to, -1, radius);
+      const counterClear = this.arcClear(world, from, to, 1, radius);
+      if (!clockwiseClear && !counterClear) continue;
+      this.orbitRadius = radius;
+      if (clockwiseClear && !counterClear) return -1;
+      if (counterClear && !clockwiseClear) return 1;
+      if (this.tieBreak === "cw") return -1;
+      if (this.tieBreak === "ccw") return 1;
+      return this.random() < 0.5 ? -1 : 1;
+    }
+
+    this.orbitRadius = full;
+    return 0;
+  }
+
+  arcClear(world, from, to, sign, radius) {
+    let sweep = wrapAngle(to - from);
+    if (sign > 0 && sweep < 0) sweep += Math.PI * 2;
+    if (sign < 0 && sweep > 0) sweep -= Math.PI * 2;
+    const steps = Math.max(2, Math.ceil(Math.abs(sweep) / 0.15));
+    for (let index = 0; index <= steps; index++) {
+      const angle = from + (sweep * index) / steps;
+      const x = world.block.x + Math.cos(angle) * radius;
+      const y = world.block.y + Math.sin(angle) * radius;
+      if (!this.reachable(world, x, y)) return false;
+      if (world.pusherTouchesBlock(x, y)) return false;
+    }
+    return true;
+  }
+
   approachTarget(world) {
-    // Straight to the contact, in the air. Nothing to route around.
-    return [this.contact.approachX, this.contact.approachY, 1];
+    const block = world.block;
+    const contact = this.contact;
+    const orbitRadius = this.orbitRadius ?? TEE.radius + PUSHER_RADIUS + ORBIT_MARGIN;
+
+    if (this.orbitSign === 0) return this.plannedApproach(world, contact);
+    const toPusherX = world.pusher.x - block.x;
+    const toPusherY = world.pusher.y - block.y;
+    const pusherRadius = Math.hypot(toPusherX, toPusherY);
+
+    if (!this.segmentHitsBlock(world, world.pusher.x, world.pusher.y, contact.approachX, contact.approachY)) {
+      return [contact.approachX, contact.approachY, 0];
+    }
+    if (pusherRadius < orbitRadius - ARRIVAL_TOLERANCE) {
+      const angle = Math.atan2(toPusherY, toPusherX);
+      return [block.x + Math.cos(angle) * orbitRadius, block.y + Math.sin(angle) * orbitRadius, 0];
+    }
+
+    const current = Math.atan2(toPusherY, toPusherX);
+    const goal = Math.atan2(contact.approachY - block.y, contact.approachX - block.x);
+    let sweep = wrapAngle(goal - current);
+    if (this.orbitSign > 0 && sweep < 0) sweep += Math.PI * 2;
+    if (this.orbitSign < 0 && sweep > 0) sweep -= Math.PI * 2;
+    if (Math.abs(sweep) < ORBIT_STEP) return [contact.approachX, contact.approachY, 0];
+    const next = current + Math.sign(sweep) * ORBIT_STEP;
+    return [block.x + Math.cos(next) * orbitRadius, block.y + Math.sin(next) * orbitRadius, 0];
+  }
+
+  plannedApproach(world, contact) {
+    this.pusherReplanIn -= 1;
+    if (!this.pusherPath || this.pusherReplanIn <= 0) {
+      this.pusherPath = planPusherPath(
+        [world.pusher.x, world.pusher.y],
+        [contact.approachX, contact.approachY],
+        world.obstacles,
+        (x, y) => world.pusherTouchesBlock(x, y),
+        PUSHER_RADIUS,
+      );
+      this.pusherReplanIn = PUSHER_REPLAN_INTERVAL;
+    }
+    if (!this.pusherPath || this.pusherPath.length === 0) {
+      return [contact.approachX, contact.approachY, 0];
+    }
+    while (
+      this.pusherPath.length > 1 &&
+      Math.hypot(world.pusher.x - this.pusherPath[0][0], world.pusher.y - this.pusherPath[0][1]) < ARRIVAL_TOLERANCE * 2
+    ) {
+      this.pusherPath.shift();
+    }
+    return [this.pusherPath[0][0], this.pusherPath[0][1], 0];
   }
 
   segmentHitsBlock(world, fromX, fromY, toX, toY) {
@@ -564,7 +620,11 @@ export class ScriptedExpert {
 
   describe() {
     if (!this.contact) return this.state;
-    return this.state === "approach" ? `lift · ${this.phase}` : this.phase;
+    if (this.state === "approach") {
+      const route = this.orbitSign === 0 ? "planned" : this.orbitSign > 0 ? "ccw" : "cw";
+      return `${route} · ${this.phase}`;
+    }
+    return this.phase;
   }
 }
 

@@ -25,10 +25,9 @@ import { FlowTrainer, sampleTime } from "../flow/flow.js";
 // resampled every 4, so a bimodal choice got re-flipped roughly eight times
 // per commitment.
 export const CHUNK = 32;
-// x, y, lift. Lift cannot be derived from the target: commanding a point past
-// the block surface is what pushing *is*, and it is geometrically identical to
-// flying over the block. Deriving it made the pusher lift whenever it should
-// have pushed, and closed-loop coverage fell from 0.219 to 0.002.
+// x, y, reserved lift channel. Lift is temporarily disabled, but retaining the
+// third channel keeps the ablation easy to reverse without changing the stored
+// action shape or every chunk consumer.
 export const ACTION_DIM = 3;
 export const CHUNK_WIDTH = CHUNK * ACTION_DIM;
 
@@ -142,7 +141,7 @@ export function buildDataset(episodes, { observationSize, includeFailures = fals
         const [dx, dy] = intoBlockFrame(source[0] - previousX, source[1] - previousY, cos, sin);
         chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM] = dx;
         chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 1] = dy;
-        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 2] = (source[2] ?? 0) > 0.5 ? 1 : -1;
+        chunks[cursor * CHUNK_WIDTH + step * ACTION_DIM + 2] = -1;
         previousX = source[0];
         previousY = source[1];
       }

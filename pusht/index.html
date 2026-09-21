@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#f3f0e8" />
     <meta
       name="description"
-      content="A quasi-static planar pushing simulator in the browser: move a T-shaped block from the lower left into a goal pose in the upper right."
+      content="A quasi-static planar pushing simulator in the browser: move a T-shaped block from the lower left into a zero-degree goal pose in the upper right."
     />
     <title>Push-T — Browser Planar Pushing</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -23,7 +23,13 @@
         <div class="header-meta">
           <nav class="page-tabs" aria-label="Push-T pages">
             <a class="page-tab" href="./" aria-current="page">Simulator</a>
-            <a class="page-tab" href="viewer/">Demo viewer</a>
+            <a
+              class="page-tab"
+              href="viewer/"
+              target="_blank"
+              rel="noopener"
+              aria-label="Demo viewer (opens in a new tab)"
+            >Demo viewer ↗</a>
           </nav>
           <span class="live-indicator"><i></i> Local compute</span>
         </div>
@@ -37,7 +43,7 @@
           </div>
           <p class="intro-copy">
             A circular pusher has to move a T-shaped block from the lower left into a goal pose in the upper
-            right, without grasping it. Start and goal are temporarily fixed with zero-degree rotation.
+            right, without grasping it. Start and goal are temporarily fixed at zero-degree rotation.
           </p>
         </section>
 
@@ -81,7 +87,7 @@
 
             <div class="legend">
               <span><i class="dot"></i> Pusher</span>
-              <span><i class="dot dot-lifted"></i> Lifted</span>
+              <span><i class="dot dot-lifted"></i> Lift disabled</span>
               <span><i class="line line-flow"></i> Sampled chunks</span>
               <span><i class="swatch-block"></i> Block</span>
               <span><i class="swatch-goal"></i> Goal pose</span>

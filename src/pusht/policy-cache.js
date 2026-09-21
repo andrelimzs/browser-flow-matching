@@ -6,9 +6,9 @@
 // the demonstrations.
 
 const STORAGE_KEY = "pusht-policy-v1";
-// Version 7 restores delta xy chunks while retaining normalized absolute state
-// inputs and the fixed zero-obstacle configuration.
-const VERSION = 7;
+// Version 9 belongs to the no-lift, zero-degree task with no orient-first phase.
+// Policies trained on the earlier rotate-translate-rotate demos are invalid.
+const VERSION = 9;
 
 function toBase64(values) {
   const bytes = new Uint8Array(values.buffer, values.byteOffset, values.byteLength);

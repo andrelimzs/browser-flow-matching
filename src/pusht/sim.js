@@ -28,10 +28,17 @@ export const PUSHER_RADIUS = 0.022;
 export const WALL_THICKNESS = 0.028;
 export const MAX_PUSHER_SPEED = 0.017;
 export const SUCCESS_COVERAGE = 0.9;
+// Temporary policy ablation: keep the pusher on the table regardless of the
+// requested lift channel. Leaving the channel in the action schema makes this
+// easy to reverse without invalidating every caller.
+export const LIFT_ENABLED = false;
 // Keep the zero-obstacle task fully fixed while the learned policy is brought
 // up. The broader region constants remain for obstacle experiments.
 export const BLOCK_START_MAX = 0.4;
 export const GOAL_START_MIN = 0.6;
+// The current no-lift task keeps the original diagonal displacement while both
+// block and goal remain at zero degrees. The expert requests translation only;
+// it does not rotate the tee into the direction of travel first.
 export const FIXED_BLOCK_START = Object.freeze({ x: 0.28, y: 0.28, angle: 0 });
 export const FIXED_GOAL = Object.freeze({ x: 0.72, y: 0.72, angle: 0 });
 export const FIXED_PUSHER_START = Object.freeze({ x: 0.14, y: 0.14 });
@@ -291,17 +298,15 @@ export class PushWorld {
     return false;
   }
 
-  // Action space: an absolute target position for the pusher plus a lift flag.
-  // The pusher is position-controlled and travels toward the target at a capped
-  // speed. Lifted, it passes over the block and the obstacles without touching
-  // them, which turns repositioning from a navigation problem into a straight
-  // line — the walls still bound it, since they are the arena edge.
+  // Action space retains an absolute target position plus a lift flag, but the
+  // flag is ignored while the no-lift ablation is active. The pusher therefore
+  // remains on the table and must navigate around the block.
   step(targetX, targetY, lift = 0) {
     const bounds = insetBounds();
     this.command.x = clamp(targetX, bounds.min + PUSHER_RADIUS, bounds.max - PUSHER_RADIUS);
     this.command.y = clamp(targetY, bounds.min + PUSHER_RADIUS, bounds.max - PUSHER_RADIUS);
 
-    this.lifted = lift > 0.5;
+    this.lifted = LIFT_ENABLED && lift > 0.5;
 
     this.previous.x = this.block.x;
     this.previous.y = this.block.y;

@@ -39,6 +39,9 @@ align a T-shaped block with a goal pose among circular obstacles. It shares no c
 npm run dev            # http://localhost:5173/browser-flow-matching/pusht/
 npm run check:pusht    # stability, replay determinism, recording pipeline
 npm run bench:pusht    # scripted-expert success rate
+npm run check:rl       # PPO/SAC environment and optimizer smoke checks
+npm run train:ppo -- 200000
+npm run train:sac -- 200000
 ```
 
 ## Physics
@@ -52,10 +55,12 @@ instead of sliding off it.
 
 - Pusher: position-controlled circle, radius `0.022`, capped at `0.017` world units per step
 - Block: 4u × 1u bar with a 1u × 3u stem, `u = 0.05`, area `0.0175`, `c² = 0.005366`
-- Action space: absolute pusher target position, matching the diffusion-policy Push-T convention
-- Observation: 11 values (pusher, block pose as cos/sin, goal pose, lift) plus 3 per obstacle — 11 currently
+- Action space: absolute pusher target position, matching the diffusion-policy Push-T convention; the
+  lift flag is temporarily forced off for the current policy ablation
+- Observation: 11 values (pusher, block pose as cos/sin, goal pose, inactive lift) plus 3 per obstacle — 11 currently
 - Success: 90% coverage of the goal footprint, by fixed-sample membership test
-- The block starts in the lower-left region and the goal in the upper-right; their orientations still vary.
+- The block starts in the lower-left and the goal in the upper-right, both fixed at 0° orientation. The
+  expert requests translation directly toward the goal without an orient-first phase.
 - The simulator supports obstacles in the corridor between start and goal, but the current UI fixes their
   count at zero while the learned policy is brought up on the simpler task.
 
@@ -83,8 +88,22 @@ the two cost within 1.25x of each other — see below. The committed side is lat
 passed; resampling it on every replan would make the block dither between the two routes and produce
 neither cleanly.
 
-On the current zero-obstacle diagonal task, the expert solves 150/150 held-out
-episodes at a 2200-step horizon, with a median of 250 steps and p90 of 308.
+The current zero-obstacle diagonal task keeps lift disabled and removes the expert's orient-first phase.
+
+## Reinforcement learning baselines
+
+The `rl-policy` branch includes two dependency-free continuous-control baselines. PPO is on-policy with
+GAE and a clipped objective; SAC uses a replay buffer, twin Q-functions, target networks, and a squashed
+Gaussian actor. Both deliberately use the same minimal task definition:
+
+- observation: one normalized 11-value simulator frame, with no history or frame stack
+- action: normalized `dx, dy` in `[-1, 1]`, scaled to one `0.017` pusher step
+- reward: `1` on completion and `0` everywhere else
+- episode horizon: 600 steps by default
+
+Training is seeded and runs in Node. Set `OUT=policy.json` to save the actor and its evaluation metadata.
+With completion-only reward, a run cannot learn until exploration first solves an episode; the CLI reports
+completion counts explicitly so a flat run is distinguishable from an optimizer failure.
 
 ## Multimodality
 
@@ -190,7 +209,8 @@ slows the other.
 Within each chunk, xy commands are learned as first differences: the first is
 relative to the current pusher and each later command is relative to the one
 before it. Sampling cumulatively reconstructs the simulator's absolute targets.
-Lift remains an explicit signed channel.
+The reserved lift channel is held off during the current ablation; keeping its
+slot makes the experiment easy to reverse without another action-schema change.
 
 `ScriptedExpert` takes `routeCostGate: 0` to disable route branching (always take the shorter way round),
 which is how the branching cost above was isolated.

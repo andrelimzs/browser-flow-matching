@@ -14,8 +14,6 @@ import { MLP } from "../flow/mlp.js";
 import { createView } from "./render.js";
 
 const EXECUTE = 16;
-const LIFT_ON = 0.4;
-const LIFT_OFF = -0.4;
 const POLICY_CAP = 600;
 const DIVERGENCE = 0.05;
 
@@ -78,7 +76,6 @@ function policyTrace(episode) {
   const block = [];
   let chunk = null;
   let cursor = Infinity;
-  let lift = 0;
   for (let step = 0; step < POLICY_CAP; step++) {
     if (world.coverage() >= SUCCESS_COVERAGE) break;
     if (cursor >= EXECUTE) {
@@ -86,11 +83,8 @@ function policyTrace(episode) {
       cursor = 0;
     }
     const base = cursor * ACTION_DIM;
-    const raw = chunk[base + 2];
-    if (raw > LIFT_ON) lift = 1;
-    else if (raw < LIFT_OFF) lift = 0;
     cursor += 1;
-    world.step(chunk[base], chunk[base + 1], lift);
+    world.step(chunk[base], chunk[base + 1], 0);
     pusher.push(world.pusher.x, world.pusher.y);
     block.push({ x: world.block.x, y: world.block.y, angle: world.block.angle });
   }

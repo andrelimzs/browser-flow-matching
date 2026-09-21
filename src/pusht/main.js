@@ -12,8 +12,8 @@ const EPISODE_CAP = 2200;
 // simplest version of the task, but make every world/data path obey one value.
 const OBSTACLE_COUNT = 0;
 // A policy episode that is going nowhere should not grind to the full cap: the
-// expert solves the fixed diagonal task in a median of 250 steps and a p90 of
-// 308, so 600 leaves ample room while ending a failure in seconds.
+// The expert's fixed diagonal task normally finishes well within 600 steps,
+// leaving ample room while ending a failure in seconds.
 const POLICY_EPISODE_CAP = 600;
 // Attempts allowed per collection slot before giving up on it. The expert
 // solves 92-100% depending on obstacle count, so six consecutive failures is
@@ -24,8 +24,6 @@ const EXECUTE = 16;
 // The raw lift sign is wrong often enough that an isolated flip would send the
 // pusher through the block instead of into it; switching only on a confident
 // value and holding otherwise turns those into no-ops.
-const LIFT_ON = 0.4;
-const LIFT_OFF = -0.4;
 // Candidate chunks drawn during the flow animation, and how many frames each
 // Euler step is held for. Two frames keeps the sampling and the motion at
 // roughly equal screen time; the tick row makes the ten steps legible without
@@ -48,7 +46,6 @@ const state = {
   recording: false,
   speed: 2,
   pointer: null,
-  lifted: false,
   trail: [],
   lastAction: null,
   finished: null,
@@ -62,7 +59,6 @@ const state = {
   sampler: null,
   flow: null,
   flowHold: 0,
-  lift: 0,
   trainSteps: 4000,
   stateNoise: 0.02,
   actionNoise: 0.001,
@@ -91,7 +87,6 @@ function resetEpisode({ newWorld = false } = {}) {
   state.chunkCursor = Infinity;
   state.sampler = null;
   state.flow = null;
-  state.lift = 0;
   syncUI();
 }
 
@@ -125,9 +120,9 @@ function reportStorage(fallback) {
 function nextAction() {
   if (state.mode === "teleop") {
     // Hold position when the cursor leaves the arena, so the block is not
-    // yanked by a stray pointer event. Held pointer button lifts the pusher.
+    // yanked by a stray pointer event. Lift is temporarily disabled.
     const target = state.pointer ?? [world.pusher.x, world.pusher.y];
-    return [target[0], target[1], state.lifted ? 1 : 0];
+    return [target[0], target[1], 0];
   }
   if (state.mode === "policy") return policyAction();
   return expert.act(world);
@@ -138,11 +133,8 @@ function nextAction() {
 // EXECUTE steps, then it repeats.
 function policyAction() {
   const base = state.chunkCursor * ACTION_DIM;
-  const raw = state.chunk[base + 2];
-  if (raw > LIFT_ON) state.lift = 1;
-  else if (raw < LIFT_OFF) state.lift = 0;
   state.chunkCursor += 1;
-  return [state.chunk[base], state.chunk[base + 1], state.lift];
+  return [state.chunk[base], state.chunk[base + 1], 0];
 }
 
 // Returns true while the flow is still running, i.e. while the pusher is paused.
@@ -278,14 +270,14 @@ function collect(count) {
 function startTraining() {
   const observationSize = world.observationSize();
   // Stored demonstrations can outlive both obstacle-count and action-schema
-  // changes. Only current zero-obstacle, lift-aware episodes are valid here.
+  // changes. Only current zero-obstacle, no-lift episodes are valid here.
   const solved = store.episodes.filter((episode) =>
     episode.success !== false &&
     (episode.observationSize ?? episode.observations?.[0]?.length) === observationSize &&
     episode.actions?.every((action) => action.length >= ACTION_DIM)
   );
-  if (solved.length < 3) {
-    setStatus("Collect at least three solved zero-obstacle demonstrations first.");
+  if (!solved.length) {
+    setStatus("Collect one solved zero-obstacle demonstration first.");
     return;
   }
   state.training = true;
@@ -647,7 +639,6 @@ arena.addEventListener("pointerleave", () => {
 arena.addEventListener("pointerdown", (event) => {
   if (state.mode !== "teleop") return;
   arena.setPointerCapture(event.pointerId);
-  state.lifted = true;
   state.pointer = view.fromClient(event.clientX, event.clientY);
   if (!state.running && !state.finished) {
     state.running = true;
@@ -657,7 +648,6 @@ arena.addEventListener("pointerdown", (event) => {
 
 for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) {
   arena.addEventListener(name, (event) => {
-    state.lifted = false;
     if (arena.hasPointerCapture?.(event.pointerId)) arena.releasePointerCapture(event.pointerId);
   });
 }
