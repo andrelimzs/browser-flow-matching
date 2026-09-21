@@ -175,7 +175,7 @@ export class PushTRLEnv {
     const truncated = !success && !wallContact && this.episodeSteps >= this.horizon;
     const done = success || wallContact || truncated;
     const finalClosenessReward = done && !wallContact ? coverage : 0;
-    const reward = wallContact ? wallPenalty : completionReward + finalClosenessReward +
+    const reward = completionReward + finalClosenessReward + wallPenalty +
       this.distanceRewardScale * distanceProgress +
       this.pusherDistanceRewardScale * pusherDistanceProgress +
       this.orientationRewardScale * orientationProgress;

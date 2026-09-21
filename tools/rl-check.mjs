@@ -147,8 +147,8 @@ if (Math.abs(closenessTransition.finalClosenessReward - closenessTransition.cove
   throw new Error("terminal closeness reward does not equal final coverage");
 }
 
-// Touching any outer wall is an immediate terminal failure with an exact -1
-// reward, regardless of the ordinary distance-shaping term.
+// Touching any outer wall is an immediate terminal failure whose -1 penalty is
+// summed with the ordinary shaping terms from that final transition.
 const wallEnv = new PushTRLEnv({ seed: 15, horizon: 100, curriculum: false });
 wallEnv.reset();
 let wallTransition = null;
@@ -161,8 +161,10 @@ console.log(
 if (!wallTransition?.done || !wallTransition.wallContact || wallTransition.success || wallTransition.truncated) {
   throw new Error("wall contact did not terminate as a failure");
 }
-if (wallTransition.reward !== -1 || wallTransition.wallPenalty !== -1) {
-  throw new Error("wall contact reward is not exactly -1");
+const expectedWallReward = wallTransition.wallPenalty + wallTransition.distanceProgress +
+  0.1 * wallTransition.pusherDistanceProgress + wallTransition.orientationProgress;
+if (wallTransition.wallPenalty !== -1 || Math.abs(wallTransition.reward - expectedWallReward) > 1e-9) {
+  throw new Error("wall contact penalty was not summed with shaping");
 }
 
 // Validate the critic input-gradient path against finite differences.
