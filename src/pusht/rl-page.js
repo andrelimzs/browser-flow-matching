@@ -19,11 +19,11 @@ const REWARD_COMPONENTS = [
   "stepPenalty",
 ];
 const REWARD_WEIGHT_DEFAULTS = {
-  completion: 1,
+  completion: 10,
   blockDistance: 1,
   pusherDistance: 0.01 / MAX_PUSHER_SPEED,
   orientation: 1,
-  closeness: 1,
+  closeness: 5,
   pusherWall: -1,
   blockWall: -10,
   inactivity: -1,

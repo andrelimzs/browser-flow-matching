@@ -57,8 +57,8 @@ if (scaledRewardEnv.rewardShaping.pusherWall || scaledRewardEnv.rewardShaping.bl
 if (!scaledRewardEnv.rewardShaping.stepPenalty) throw new Error("step penalty does not default to on");
 if (scaledRewardEnv.rewardWeights.blockDistance !== 3 ||
     Math.abs(scaledRewardEnv.rewardWeights.pusherDistance - 0.01 / MAX_PUSHER_SPEED) > 1e-12 ||
-    scaledRewardEnv.rewardWeights.orientation !== 1 || scaledRewardEnv.rewardWeights.completion !== 1 ||
-    scaledRewardEnv.rewardWeights.closeness !== 1 || scaledRewardEnv.rewardWeights.pusherWall !== -1 ||
+    scaledRewardEnv.rewardWeights.orientation !== 1 || scaledRewardEnv.rewardWeights.completion !== 10 ||
+    scaledRewardEnv.rewardWeights.closeness !== 5 || scaledRewardEnv.rewardWeights.pusherWall !== -1 ||
     scaledRewardEnv.rewardWeights.blockWall !== -10 || scaledRewardEnv.rewardWeights.inactivity !== -1 ||
     scaledRewardEnv.rewardWeights.stepPenalty !== -0.01) {
   throw new Error("reward weights do not preserve the previous defaults");
@@ -295,8 +295,8 @@ console.log(
   `step cost ${stepPenaltyReward.toFixed(4)}, ` +
   `total ${totalReward.toFixed(4)}`,
 );
-if (!solved || completionRewards !== 1) throw new Error("completion reward is wrong");
-if (Math.abs(totalReward - (1 + finalClosenessReward + distanceReward +
+if (!solved || completionRewards !== 10) throw new Error("completion reward is wrong");
+if (Math.abs(totalReward - (10 + finalClosenessReward + distanceReward +
     pusherDistanceReward + orientationReward + stepPenaltyReward)) > 1e-5) {
   throw new Error("combined reward is wrong");
 }
@@ -329,8 +329,8 @@ console.log(
 if (!closenessTransition.truncated || closenessTransition.success || closenessTransition.wallContact) {
   throw new Error("closeness test did not terminate by horizon");
 }
-if (Math.abs(closenessTransition.finalClosenessReward - closenessTransition.coverage) > 1e-6) {
-  throw new Error("terminal closeness reward does not match final shape-overlap coverage");
+if (Math.abs(closenessTransition.finalClosenessReward - 5 * closenessTransition.coverage) > 1e-6) {
+  throw new Error("terminal closeness reward does not match 5 × final shape-overlap coverage");
 }
 
 // The pusher-wall toggle links its penalty and termination behavior.

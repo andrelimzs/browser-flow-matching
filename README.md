@@ -103,7 +103,7 @@ Both deliberately use the same minimal task definition:
 
 - observation: one normalized 11-value simulator frame, with no history or frame stack
 - action: `dx, dy` projected onto the unit disk, then scaled to at most one `0.017` pusher step (so diagonal and axial commands have the same maximum speed)
-- reward: signed progress (`previous − current`) in block-to-goal distance, pusher-to-goal distance, and normalized orientation error; a full-speed pusher step directly toward the goal earns `+0.01`, no movement earns zero shaping, and regression earns negative shaping. Final shape-overlap coverage is added as closeness. Completion `+1`, an every-step `−0.01` cost, pusher-wall `−1`, block-wall `−10`, and five-step inactivity `−1` are separate components. Every term has a browser toggle; both wall components default off. Enabling either wall component enables its penalty and immediate termination together. Five consecutive steps without actual pusher displacement always terminate the episode.
+- reward: signed progress (`previous − current`) in block-to-goal distance, pusher-to-goal distance, and normalized orientation error; a full-speed pusher step directly toward the goal earns `+0.01`, no movement earns zero shaping, and regression earns negative shaping. Final shape-overlap coverage is weighted by `5`. Completion `+10`, an every-step `−0.01` cost, pusher-wall `−1`, block-wall `−10`, and five-step inactivity `−1` are separate components. Every term has a browser toggle; both wall components default off. Enabling either wall component enables its penalty and immediate termination together. Five consecutive steps without actual pusher displacement always terminate the episode.
 - episode horizon: 200 steps by default
 
 With the position curriculum enabled (the browser default), the block begins at 25% of the original
@@ -119,7 +119,7 @@ Training is seeded and runs in Node. Set `OUT=policy.json` to save the actor and
 Block position, pusher position, and orientation progress are measured per transition. This deliberately
 keeps stationary shaping at exactly zero. The pusher coefficient is `0.01` per maximum-speed step, and
 orientation error is divided by π.
-At success or timeout, final shape-overlap coverage is added as a closeness reward. Completion counts
+At success or timeout, five times the final shape-overlap coverage is added as a closeness reward. Completion counts
 remain explicit in the CLI output. The browser separates the three potential-shaping terms from completion,
 final coverage, the enabled-by-default step cost and inactivity penalty, and the two optional wall penalties.
 Every term has both an enable control and an editable signed coefficient; the displayed defaults reproduce

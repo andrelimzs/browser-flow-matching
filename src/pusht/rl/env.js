@@ -88,11 +88,11 @@ export class PushTRLEnv {
       stepPenalty: rewardShaping.stepPenalty ?? true,
     };
     this.rewardWeights = {
-      completion: rewardWeight(rewardWeights.completion, 1),
+      completion: rewardWeight(rewardWeights.completion, 10),
       blockDistance: rewardWeight(rewardWeights.blockDistance, distanceRewardScale),
       pusherDistance: rewardWeight(rewardWeights.pusherDistance, pusherDistanceRewardScale),
       orientation: rewardWeight(rewardWeights.orientation, orientationRewardScale),
-      closeness: rewardWeight(rewardWeights.closeness, 1),
+      closeness: rewardWeight(rewardWeights.closeness, 5),
       pusherWall: rewardWeight(rewardWeights.pusherWall, -1),
       blockWall: rewardWeight(rewardWeights.blockWall, -10),
       inactivity: rewardWeight(rewardWeights.inactivity, -1),
