@@ -10,6 +10,7 @@ import { ScriptedExpert } from "../src/pusht/expert.js";
 import {
   CURRICULUM_INITIAL_DISTANCE_FRACTION,
   cartesianActionToDelta,
+  MAX_STATIONARY_STEPS,
   PushTRLEnv,
   RL_ACTION_SIZE,
   RL_OBSERVATION_SIZE,
@@ -75,6 +76,68 @@ if (stationaryTransition.distanceShapingReward !== 0 ||
     stationaryTransition.pusherDistanceShapingReward !== 0 ||
     stationaryTransition.orientationShapingReward !== 0 || stationaryTransition.reward !== 0) {
   throw new Error("stationary action earned shaping reward");
+}
+const onlyInactivity = {
+  completion: false,
+  blockDistance: false,
+  pusherDistance: false,
+  orientation: false,
+  closeness: false,
+  pusherWall: false,
+  blockWall: false,
+  inactivity: true,
+};
+const inactivityEnv = new PushTRLEnv({
+  seed: 18,
+  horizon: 100,
+  curriculum: false,
+  rewardShaping: onlyInactivity,
+});
+inactivityEnv.reset();
+let inactivityTransition;
+for (let step = 1; step <= MAX_STATIONARY_STEPS; step++) {
+  inactivityTransition = inactivityEnv.step(Float32Array.of(0, 0));
+  if (step < MAX_STATIONARY_STEPS && inactivityTransition.done) {
+    throw new Error(`inactivity terminated after only ${step} steps`);
+  }
+}
+if (!inactivityTransition.done || !inactivityTransition.stalled ||
+    inactivityTransition.inactivityPenalty !== -1 || inactivityTransition.reward !== -1) {
+  throw new Error("five stationary steps did not terminate with exactly -1 reward");
+}
+const resetInactivityEnv = new PushTRLEnv({
+  seed: 18,
+  horizon: 100,
+  curriculum: false,
+  rewardShaping: onlyInactivity,
+});
+resetInactivityEnv.reset();
+for (let step = 0; step < MAX_STATIONARY_STEPS - 1; step++) {
+  resetInactivityEnv.step(Float32Array.of(0, 0));
+}
+const movementTransition = resetInactivityEnv.step(Float32Array.of(1, 0));
+if (movementTransition.done || movementTransition.stationarySteps !== 0 ||
+    movementTransition.pusherDisplacement <= 0) {
+  throw new Error("actual pusher movement did not reset the inactivity counter");
+}
+for (let step = 1; step < MAX_STATIONARY_STEPS; step++) {
+  const transition = resetInactivityEnv.step(Float32Array.of(0, 0));
+  if (transition.done) throw new Error("inactivity counter did not restart after movement");
+}
+const disabledInactivityEnv = new PushTRLEnv({
+  seed: 18,
+  horizon: 100,
+  curriculum: false,
+  rewardShaping: { ...onlyInactivity, inactivity: false },
+});
+disabledInactivityEnv.reset();
+let disabledInactivityTransition;
+for (let step = 0; step < MAX_STATIONARY_STEPS; step++) {
+  disabledInactivityTransition = disabledInactivityEnv.step(Float32Array.of(0, 0));
+}
+if (!disabledInactivityTransition.stalled || !disabledInactivityTransition.done ||
+    disabledInactivityTransition.inactivityPenalty !== 0 || disabledInactivityTransition.reward !== 0) {
+  throw new Error("disabling the inactivity reward changed its termination semantics");
 }
 const pusherShapingEnv = new PushTRLEnv({
   seed: 8,
@@ -156,7 +219,7 @@ console.log("curriculum: randomized bearing and matched pusher gap, near radius 
 
 // Environment contract: every shaping term is signed transition progress, and
 // all enabled reward components sum exactly.
-const env = new PushTRLEnv({ seed: 10, horizon: 2200 });
+const env = new PushTRLEnv({ seed: 10, horizon: 2200, maxStationarySteps: Infinity });
 env.setTrainingProgress(1);
 let observation = env.reset();
 if (observation.length !== RL_OBSERVATION_SIZE || RL_ACTION_SIZE !== 2) throw new Error("wrong RL shape");

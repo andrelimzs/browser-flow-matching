@@ -39,6 +39,8 @@ export function cartesianActionToDelta(action, out = new Float32Array(2)) {
 const PUSHER_WALL_MIN = WALL_THICKNESS + PUSHER_RADIUS;
 const PUSHER_WALL_MAX = 1 - PUSHER_WALL_MIN;
 const WALL_EPSILON = 1e-9;
+const PUSHER_MOVEMENT_EPSILON = 1e-6;
+export const MAX_STATIONARY_STEPS = 5;
 const BLOCK_WALL_EPSILON = 1e-6;
 const BLOCK_LOCAL_CORNERS = TEE.parts.flatMap((part) => rectCorners(part));
 const BLOCK_MIN_X = WALL_THICKNESS - Math.min(...TEE.parts.map((part) => part.minX));
@@ -58,6 +60,7 @@ export class PushTRLEnv {
   constructor({
     seed = 1,
     horizon = 200,
+    maxStationarySteps = MAX_STATIONARY_STEPS,
     distanceRewardScale = 1,
     pusherDistanceRewardScale = 0.01 / MAX_PUSHER_SPEED,
     orientationRewardScale = 1,
@@ -67,6 +70,7 @@ export class PushTRLEnv {
     this.random = createRandom(seed);
     this.world = new PushWorld({ random: this.random, obstacleCount: 0 });
     this.horizon = horizon;
+    this.maxStationarySteps = maxStationarySteps;
     this.distanceRewardScale = distanceRewardScale;
     this.pusherDistanceRewardScale = pusherDistanceRewardScale;
     this.orientationRewardScale = orientationRewardScale;
@@ -78,6 +82,7 @@ export class PushTRLEnv {
       closeness: rewardShaping.closeness ?? true,
       pusherWall: rewardShaping.pusherWall ?? false,
       blockWall: rewardShaping.blockWall ?? false,
+      inactivity: rewardShaping.inactivity ?? true,
     };
     this.curriculum = curriculum;
     this.trainingProgress = 0;
@@ -87,6 +92,7 @@ export class PushTRLEnv {
     this.distance = 0;
     this.pusherDistance = 0;
     this.orientationError = 0;
+    this.stationarySteps = 0;
     this.actionDelta = new Float32Array(2);
   }
 
@@ -187,13 +193,23 @@ export class PushTRLEnv {
     this.distance = this.blockGoalDistance();
     this.pusherDistance = this.pusherGoalDistance();
     this.orientationError = this.blockGoalOrientationError();
+    this.stationarySteps = 0;
     return this.observe();
   }
 
   step(action) {
     const [dx, dy] = cartesianActionToDelta(action, this.actionDelta);
+    const previousPusherX = this.world.pusher.x;
+    const previousPusherY = this.world.pusher.y;
     this.world.step(this.world.pusher.x + dx, this.world.pusher.y + dy, 0);
     this.episodeSteps += 1;
+    const pusherDisplacement = Math.hypot(
+      this.world.pusher.x - previousPusherX,
+      this.world.pusher.y - previousPusherY,
+    );
+    this.stationarySteps = pusherDisplacement <= PUSHER_MOVEMENT_EPSILON
+      ? this.stationarySteps + 1
+      : 0;
     const previousDistance = this.distance;
     const distance = this.blockGoalDistance();
     const distanceProgress = previousDistance - distance;
@@ -213,13 +229,16 @@ export class PushTRLEnv {
     const success = coverage >= SUCCESS_COVERAGE;
     const wallContact = !success && this.pusherTouchesWall();
     const blockWallContact = this.blockTouchesWall();
+    const stalled = !success && this.stationarySteps >= this.maxStationarySteps;
     const completionReward = success && this.rewardShaping.completion ? 1 : 0;
     const wallPenalty = wallContact && this.rewardShaping.pusherWall ? -1 : 0;
     const blockWallPenalty = blockWallContact && this.rewardShaping.blockWall ? -10 : 0;
-    const truncated = !success && !wallContact && this.episodeSteps >= this.horizon;
-    const done = success || wallContact || truncated;
-    const finalClosenessReward = done && !wallContact && this.rewardShaping.closeness ? coverage : 0;
+    const inactivityPenalty = stalled && this.rewardShaping.inactivity ? -1 : 0;
+    const truncated = !success && !wallContact && !stalled && this.episodeSteps >= this.horizon;
+    const done = success || wallContact || stalled || truncated;
+    const finalClosenessReward = done && !wallContact && !stalled && this.rewardShaping.closeness ? coverage : 0;
     const reward = completionReward + finalClosenessReward + wallPenalty + blockWallPenalty +
+      inactivityPenalty +
       (this.rewardShaping.blockDistance ? distanceShapingReward : 0) +
       (this.rewardShaping.pusherDistance ? pusherDistanceShapingReward : 0) +
       (this.rewardShaping.orientation ? orientationShapingReward : 0);
@@ -231,6 +250,7 @@ export class PushTRLEnv {
       finalClosenessReward,
       wallPenalty,
       blockWallPenalty,
+      inactivityPenalty,
       distanceProgress,
       distanceShapingReward,
       distance,
@@ -240,10 +260,13 @@ export class PushTRLEnv {
       orientationProgress,
       orientationShapingReward,
       orientationError,
+      pusherDisplacement,
+      stationarySteps: this.stationarySteps,
       done,
       success,
       wallContact,
       blockWallContact,
+      stalled,
       truncated,
       coverage,
     };

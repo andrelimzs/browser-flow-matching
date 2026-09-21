@@ -15,6 +15,7 @@ const REWARD_COMPONENTS = [
   "closeness",
   "pusherWall",
   "blockWall",
+  "inactivity",
 ];
 const entropyConfigs = {
   ppo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
@@ -35,6 +36,7 @@ const state = {
     closeness: true,
     pusherWall: false,
     blockWall: false,
+    inactivity: true,
   },
   entropyByAlgorithm: { ppo: 0, sac: 0.3 },
   widthByAlgorithm: { ppo: 64, sac: 256 },
@@ -282,7 +284,13 @@ function selectRollout(index) {
   $("#selectedStep").textContent = rollout.step.toLocaleString();
   $("#selectedReturn").textContent = formatReturn(rollout.return);
   $("#selectedCoverage").textContent = `${(rollout.coverage * 100).toFixed(1)}%`;
-  $("#selectedOutcome").textContent = rollout.success ? "Complete" : rollout.wallContact ? "Wall contact" : "Timed out";
+  $("#selectedOutcome").textContent = rollout.success
+    ? "Complete"
+    : rollout.wallContact
+      ? "Wall contact"
+      : rollout.stalled
+        ? "No movement"
+        : "Timed out";
   $("#rolloutReturnLabel").textContent = `return ${formatReturn(rollout.return)}`;
   $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
   $("#rolloutPill").dataset.active = "record";
@@ -305,6 +313,7 @@ function addRollout(message) {
     return: message.return,
     success: message.success,
     wallContact: message.wallContact,
+    stalled: message.stalled,
     coverage: message.coverage,
     count: message.count,
     algorithm: message.progress.algorithm,
@@ -479,6 +488,7 @@ function registerWebMcpTools() {
             closeness: { type: "boolean" },
             pusherWall: { type: "boolean" },
             blockWall: { type: "boolean" },
+            inactivity: { type: "boolean" },
           },
           required: REWARD_COMPONENTS,
           additionalProperties: false,

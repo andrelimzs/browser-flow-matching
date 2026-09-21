@@ -101,7 +101,7 @@ Both deliberately use the same minimal task definition:
 
 - observation: one normalized 11-value simulator frame, with no history or frame stack
 - action: `dx, dy` projected onto the unit disk, then scaled to at most one `0.017` pusher step (so diagonal and axial commands have the same maximum speed)
-- reward: signed progress (`previous − current`) in block-to-goal distance, pusher-to-goal distance, and normalized orientation error; a full-speed pusher step directly toward the goal earns `+0.01`, no movement earns zero shaping, and regression earns negative shaping. Final overlap coverage, completion `+1`, pusher-wall `−1`, and block-wall `−10` are separate components. Every term has a browser toggle; both wall penalties default off while pusher-wall contact still terminates the episode.
+- reward: signed progress (`previous − current`) in block-to-goal distance, pusher-to-goal distance, and normalized orientation error; a full-speed pusher step directly toward the goal earns `+0.01`, no movement earns zero shaping, and regression earns negative shaping. Final overlap coverage, completion `+1`, pusher-wall `−1`, block-wall `−10`, and five-step inactivity `−1` are separate components. Every term has a browser toggle; both wall penalties default off. Pusher-wall contact and five consecutive steps without actual pusher displacement terminate the episode.
 - episode horizon: 200 steps by default
 
 With the position curriculum enabled (the browser default), the block begins at 25% of the original
@@ -117,7 +117,7 @@ keeps stationary shaping at exactly zero. The pusher coefficient is `0.01` per m
 orientation error is divided by π.
 At success or timeout, the final shape-overlap coverage is added as a closeness reward. Completion counts
 remain explicit in the CLI output. The browser separates toggles for the three potential-shaping terms from
-toggles for completion, final closeness, and the two optional wall penalties.
+toggles for completion, final closeness, the two optional wall penalties, and the enabled-by-default inactivity penalty.
 
 The browser trainer follows CleanRL's continuous-control collection defaults: PPO uses one environment,
 2,048 steps per rollout, 32 minibatches of 64, and 10 update epochs; SAC uses one environment, replay
