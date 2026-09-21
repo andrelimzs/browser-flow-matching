@@ -39,6 +39,24 @@ if (!solved || completionRewards !== 1) throw new Error("completion reward is wr
 if (Math.abs(distanceReward - expectedDistanceReward) > 1e-6) throw new Error("distance shaping does not telescope");
 if (Math.abs(totalReward - (1 + expectedDistanceReward)) > 1e-6) throw new Error("combined reward is wrong");
 
+// Touching any outer wall is an immediate terminal failure with an exact -1
+// reward, regardless of the ordinary distance-shaping term.
+const wallEnv = new PushTRLEnv({ seed: 15, horizon: 100 });
+wallEnv.reset();
+let wallTransition = null;
+for (let step = 0; step < 20 && !wallTransition?.done; step++) {
+  wallTransition = wallEnv.step(Float32Array.of(-1, 0));
+}
+console.log(
+  `wall contact: done ${wallTransition?.done}, contact ${wallTransition?.wallContact}, reward ${wallTransition?.reward}`,
+);
+if (!wallTransition?.done || !wallTransition.wallContact || wallTransition.success || wallTransition.truncated) {
+  throw new Error("wall contact did not terminate as a failure");
+}
+if (wallTransition.reward !== -1 || wallTransition.wallPenalty !== -1) {
+  throw new Error("wall contact reward is not exactly -1");
+}
+
 // Validate the critic input-gradient path against finite differences.
 const gradientRandom = createRandom(12);
 const gradientModel = new MLP({ sizes: [3, 5, 1], maxBatch: 1, random: gradientRandom });

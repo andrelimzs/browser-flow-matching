@@ -2,15 +2,25 @@
 //
 // Observation: the current normalized simulator observation (no frame stack).
 // Action: normalized dx/dy in [-1, 1], scaled to one maximum pusher step.
-// Reward: progress in block-to-goal distance, plus 1 on completion.
+// Reward: progress in block-to-goal distance, +1 on completion, or -1 on wall contact.
 
-import { PushWorld, createRandom, MAX_PUSHER_SPEED, SUCCESS_COVERAGE } from "../sim.js";
+import {
+  PushWorld,
+  createRandom,
+  MAX_PUSHER_SPEED,
+  PUSHER_RADIUS,
+  SUCCESS_COVERAGE,
+  WALL_THICKNESS,
+} from "../sim.js";
 import { normalizeObservation } from "../policy.js";
 
 export const RL_OBSERVATION_SIZE = 11;
 export const RL_ACTION_SIZE = 2;
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+const PUSHER_WALL_MIN = WALL_THICKNESS + PUSHER_RADIUS;
+const PUSHER_WALL_MAX = 1 - PUSHER_WALL_MIN;
+const WALL_EPSILON = 1e-9;
 
 export class PushTRLEnv {
   constructor({ seed = 1, horizon = 600, distanceRewardScale = 1 } = {}) {
@@ -26,6 +36,12 @@ export class PushTRLEnv {
 
   blockGoalDistance() {
     return Math.hypot(this.world.goal.x - this.world.block.x, this.world.goal.y - this.world.block.y);
+  }
+
+  pusherTouchesWall() {
+    const { x, y } = this.world.pusher;
+    return x <= PUSHER_WALL_MIN + WALL_EPSILON || x >= PUSHER_WALL_MAX - WALL_EPSILON ||
+      y <= PUSHER_WALL_MIN + WALL_EPSILON || y >= PUSHER_WALL_MAX - WALL_EPSILON;
   }
 
   observe() {
@@ -50,19 +66,23 @@ export class PushTRLEnv {
     const distanceProgress = this.distance - distance;
     this.distance = distance;
     const success = this.world.coverage() >= SUCCESS_COVERAGE;
+    const wallContact = !success && this.pusherTouchesWall();
     const completionReward = success ? 1 : 0;
-    const reward = completionReward + this.distanceRewardScale * distanceProgress;
-    const truncated = !success && this.episodeSteps >= this.horizon;
-    const done = success || truncated;
+    const wallPenalty = wallContact ? -1 : 0;
+    const reward = wallContact ? wallPenalty : completionReward + this.distanceRewardScale * distanceProgress;
+    const truncated = !success && !wallContact && this.episodeSteps >= this.horizon;
+    const done = success || wallContact || truncated;
     this.episodeReturn += reward;
     return {
       observation: this.observe(),
       reward,
       completionReward,
+      wallPenalty,
       distanceProgress,
       distance,
       done,
       success,
+      wallContact,
       truncated,
       coverage: this.world.coverage(),
     };

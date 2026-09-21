@@ -133,6 +133,7 @@ export function recordPolicyRollout(actor, env) {
   let count = 0;
   let totalReturn = 0;
   let success = false;
+  let wallContact = false;
   let coverage = env.world.coverage();
 
   const recordFrame = () => {
@@ -158,6 +159,7 @@ export function recordPolicyRollout(actor, env) {
     totalReturn += transition.reward;
     coverage = transition.coverage;
     success = transition.success;
+    wallContact = transition.wallContact;
     recordFrame();
     if (transition.done) break;
   }
@@ -167,6 +169,7 @@ export function recordPolicyRollout(actor, env) {
     count,
     return: totalReturn,
     success,
+    wallContact,
     coverage,
   };
 }

@@ -114,7 +114,7 @@ function selectRollout(index) {
   $("#selectedStep").textContent = rollout.step.toLocaleString();
   $("#selectedReturn").textContent = formatReturn(rollout.return);
   $("#selectedCoverage").textContent = `${(rollout.coverage * 100).toFixed(1)}%`;
-  $("#selectedOutcome").textContent = rollout.success ? "Complete" : "Incomplete";
+  $("#selectedOutcome").textContent = rollout.success ? "Complete" : rollout.wallContact ? "Wall contact" : "Timed out";
   $("#rolloutReturnLabel").textContent = `return ${formatReturn(rollout.return)}`;
   $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
   $("#rolloutPill").dataset.active = "record";
@@ -132,6 +132,7 @@ function addRollout(message) {
     step: message.step,
     return: message.return,
     success: message.success,
+    wallContact: message.wallContact,
     coverage: message.coverage,
     count: message.count,
     frames,
