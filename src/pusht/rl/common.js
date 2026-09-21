@@ -124,3 +124,49 @@ export function evaluatePolicy(actor, env, episodes = 5) {
   }
   return { successes, episodes, meanCoverage: coverage / episodes };
 }
+
+export function recordPolicyRollout(actor, env) {
+  const valuesPerFrame = 6;
+  const frames = new Float32Array((env.horizon + 1) * valuesPerFrame);
+  const action = new Float32Array(2);
+  let observation = env.reset();
+  let count = 0;
+  let totalReturn = 0;
+  let success = false;
+  let coverage = env.world.coverage();
+
+  const recordFrame = () => {
+    const offset = count * valuesPerFrame;
+    frames[offset] = env.world.pusher.x;
+    frames[offset + 1] = env.world.pusher.y;
+    frames[offset + 2] = env.world.block.x;
+    frames[offset + 3] = env.world.block.y;
+    frames[offset + 4] = env.world.block.angle;
+    frames[offset + 5] = coverage;
+    count += 1;
+  };
+
+  recordFrame();
+  for (;;) {
+    actor.inputBuffer().set(observation, 0);
+    const output = actor.forward(1);
+    const sample = actorSample(output, 0, Math.random, true);
+    action[0] = sample.actionX;
+    action[1] = sample.actionY;
+    const transition = env.step(action);
+    observation = transition.observation;
+    totalReturn += transition.reward;
+    coverage = transition.coverage;
+    success = transition.success;
+    recordFrame();
+    if (transition.done) break;
+  }
+
+  return {
+    frames: frames.slice(0, count * valuesPerFrame),
+    count,
+    return: totalReturn,
+    success,
+    coverage,
+  };
+}

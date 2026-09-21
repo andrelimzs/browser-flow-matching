@@ -276,7 +276,7 @@ export function trainSAC({
         actorLoss: actorLoss / Math.max(1, updates),
         criticLoss: criticLoss / Math.max(1, updates),
         replaySize: replay.size,
-      });
+      }, { actor, critic1, critic2 });
       intervalSuccesses = 0;
       criticLoss = 0;
       actorLoss = 0;

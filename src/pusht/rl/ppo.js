@@ -196,7 +196,7 @@ export function trainPPO({
       rolloutSuccesses,
       policyLoss: policyLoss / Math.max(1, updates),
       valueLoss: valueLoss / Math.max(1, updates),
-    });
+    }, { actor, critic });
   }
 
   return { actor, critic, steps, episodes, successes };

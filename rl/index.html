@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f3f0e8" />
+    <meta name="description" content="Train and inspect PPO and SAC policies for Push-T directly in the browser." />
+    <title>RL Training — Push-T</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app" class="rl-app">
+      <header class="site-header rl-header">
+        <a class="brand" href="../pusht/" aria-label="Push-T simulator">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Push-T</span>
+        </a>
+        <div class="header-meta">
+          <nav class="page-tabs" aria-label="Push-T pages">
+            <a class="page-tab" href="../pusht/">Simulator</a>
+            <a class="page-tab" href="./" aria-current="page">RL training</a>
+            <a class="page-tab" href="../pusht/viewer/">Demo viewer</a>
+          </nav>
+          <span class="live-indicator"><i></i> Worker ready</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="rl-titlebar">
+          <div>
+            <p class="eyebrow">Continuous control laboratory</p>
+            <h1>Learn from <em>contact.</em></h1>
+          </div>
+          <p>Single-frame observation · delta action · distance progress + completion reward</p>
+        </section>
+
+        <section class="rl-workspace" aria-label="Reinforcement learning trainer">
+          <article class="visualizer-card rollout-card">
+            <div class="card-heading">
+              <div>
+                <p class="label">Logged every 100 training steps</p>
+                <h2>Policy rollout</h2>
+              </div>
+              <div class="phase-pill" id="rolloutPill"><span></span><span id="rolloutStatus">Awaiting training</span></div>
+            </div>
+
+            <div class="canvas-shell rl-canvas-shell">
+              <canvas id="arena" aria-label="Selected reinforcement-learning policy rollout"></canvas>
+              <div class="canvas-label canvas-label-source">Selected policy trajectory</div>
+              <div class="canvas-label canvas-label-target"><span id="rolloutReturnLabel">return —</span></div>
+              <div class="rollout-empty" id="rolloutEmpty">
+                <strong>No rollouts logged yet</strong>
+                <span>Start training to capture a deterministic rollout every 100 steps.</span>
+              </div>
+            </div>
+
+            <div class="rollout-scrubber">
+              <div>
+                <span>Logged rollout</span>
+                <output id="rolloutStepOutput">—</output>
+              </div>
+              <input id="rolloutSlider" type="range" min="0" max="0" step="1" value="0" disabled aria-label="Selected logged rollout" />
+            </div>
+
+            <div class="rollout-summary">
+              <div><span>Training step</span><strong id="selectedStep">—</strong></div>
+              <div><span>Episode return</span><strong id="selectedReturn">—</strong></div>
+              <div><span>Final coverage</span><strong id="selectedCoverage">—</strong></div>
+              <div><span>Outcome</span><strong id="selectedOutcome">—</strong></div>
+            </div>
+          </article>
+
+          <aside class="training-card rl-controls">
+            <div class="card-heading">
+              <div>
+                <p class="label">Background trainer</p>
+                <h2>Experiment controls</h2>
+              </div>
+              <div class="phase-pill" id="trainingPill"><span></span><span id="trainingStatus">Idle</span></div>
+            </div>
+
+            <p class="control-label">Algorithm</p>
+            <div class="mode-row" role="group" aria-label="RL algorithm">
+              <button class="mode-toggle" type="button" data-algorithm="ppo" aria-pressed="true">PPO</button>
+              <button class="mode-toggle" type="button" data-algorithm="sac" aria-pressed="false">SAC</button>
+            </div>
+
+            <div class="button-row">
+              <button id="startButton" class="primary-button" type="button">Start training</button>
+              <button id="stopButton" class="ghost-button" type="button" disabled>Stop</button>
+            </div>
+
+            <div class="rl-setting">
+              <div><span>Training budget</span><output id="budgetOutput">10k</output></div>
+              <input id="budgetSlider" type="range" min="1" max="3" step="1" value="1" />
+              <div class="range-ends"><span>10k</span><span>50k</span><span>100k</span></div>
+            </div>
+
+            <div class="rl-setting">
+              <div><span>Episode horizon</span><output id="horizonOutput">600</output></div>
+              <input id="horizonSlider" type="range" min="200" max="1000" step="100" value="600" />
+              <div class="range-ends"><span>200</span><span>1,000</span></div>
+            </div>
+
+            <div class="solver-setting">
+              <span>Network width</span>
+              <div class="step-options" role="group" aria-label="Network width">
+                <button type="button" data-width="64" aria-pressed="false">64</button>
+                <button type="button" data-width="128" aria-pressed="true">128</button>
+              </div>
+            </div>
+
+            <div class="return-panel">
+              <div class="return-heading">
+                <div><p class="label">Evaluation return</p><strong id="latestReturn">—</strong></div>
+                <span>every 100 steps</span>
+              </div>
+              <canvas id="returnCanvas" aria-label="Policy rollout return over training time"></canvas>
+            </div>
+
+            <div class="metrics rl-metrics">
+              <div class="metric"><span>Steps</span><strong id="stepsMetric">0</strong></div>
+              <div class="metric"><span>Episodes</span><strong id="episodesMetric">0</strong></div>
+              <div class="metric"><span>Completions</span><strong id="successMetric">0</strong></div>
+              <div class="metric"><span>Logged rollouts</span><strong id="rolloutMetric">0</strong></div>
+            </div>
+
+            <p class="note" id="statusNote">Training runs in a Web Worker, so controls, charts, and rollout inspection stay responsive.</p>
+          </aside>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/pusht/rl-page.js"></script>
+  </body>
+</html>
