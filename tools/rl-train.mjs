@@ -13,7 +13,7 @@ import { trainPPO } from "../src/pusht/rl/ppo.js";
 import { trainSAC } from "../src/pusht/rl/sac.js";
 
 const algorithm = (process.argv[2] ?? "ppo").toLowerCase();
-const totalSteps = Number(process.argv[3] ?? 100_000);
+const totalSteps = Number(process.argv[3] ?? 1_000_000);
 const seed = Number(process.env.SEED ?? 2026);
 const width = Number(process.env.WIDTH ?? (algorithm === "ppo" ? 64 : 256));
 const horizon = Number(process.env.HORIZON ?? 200);
@@ -37,7 +37,7 @@ const onProgress = (progress) => {
 };
 
 console.log(
-  `${algorithm.toUpperCase()} · single frame (11) · unit-disk action dx/dy (2) · reward block progress + pusher progress (0.01/full step) + final closeness, completion +1, pusher wall -1, block wall -10\n` +
+  `${algorithm.toUpperCase()} · single frame (11) · unit-disk action dx/dy (2) · discount-consistent distance/orientation shaping + final closeness and completion; wall penalties off by default\n` +
   `seed ${seed} · horizon ${horizon} · width ${width} · curriculum ${curriculum ? "on" : "off"} · steps ${totalSteps.toLocaleString()}`,
 );
 
@@ -60,7 +60,7 @@ if (process.env.OUT) {
     algorithm,
     observation: "single normalized frame",
     action: "dx,dy projected onto the unit disk and scaled to max pusher speed",
-    reward: "block-goal position/orientation progress + pusher-goal progress (0.01 for a full-speed step toward goal) + final overlap closeness + completion; pusher wall adds -1 and terminates; block wall adds -10",
+    reward: "discount-consistent block-goal, pusher-goal, and orientation potential shaping + final overlap closeness + completion; wall penalty components default off",
     seed,
     totalSteps,
     horizon,

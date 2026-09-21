@@ -107,8 +107,8 @@
             </div>
 
             <div class="rl-setting">
-              <div><span>Training budget</span><output id="budgetOutput">100k</output></div>
-              <input id="budgetSlider" type="range" min="4" max="6" step="0.1" value="5" aria-label="Training budget on a logarithmic scale" />
+              <div><span>Training budget</span><output id="budgetOutput">1M</output></div>
+              <input id="budgetSlider" type="range" min="4" max="6" step="0.1" value="6" aria-label="Training budget on a logarithmic scale" />
               <div class="range-ends"><span>10k</span><span>1M</span></div>
             </div>
 
@@ -130,7 +130,16 @@
                 <button class="mode-toggle" type="button" data-reward-shaping="blockDistance" aria-pressed="true">Block distance</button>
                 <button class="mode-toggle" type="button" data-reward-shaping="pusherDistance" aria-pressed="true">Pusher distance</button>
                 <button class="mode-toggle" type="button" data-reward-shaping="orientation" aria-pressed="true">Orientation</button>
+              </div>
+            </div>
+
+            <div class="reward-shaping-setting reward-component-setting">
+              <p class="control-label">Reward components</p>
+              <div class="reward-toggle-grid" role="group" aria-label="Reward components">
+                <button class="mode-toggle" type="button" data-reward-shaping="completion" aria-pressed="true">Completion +1</button>
                 <button class="mode-toggle" type="button" data-reward-shaping="closeness" aria-pressed="true">Final closeness</button>
+                <button class="mode-toggle" type="button" data-reward-shaping="pusherWall" aria-pressed="false">Pusher wall −1</button>
+                <button class="mode-toggle" type="button" data-reward-shaping="blockWall" aria-pressed="false">Block wall −10</button>
               </div>
             </div>
 

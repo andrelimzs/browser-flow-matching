@@ -31,6 +31,9 @@
 .reward-swatch { background: #ed6b55; }
 #valueCanvas { display: block; width: 100%; height: 190px; border: 1px solid var(--line); background: #f4f2ec; }
 .rl-controls { min-width: 0; }
+#startButton { border-color: #3d9b55; background: #58b96d; color: #071f0d; box-shadow: 0 7px 20px rgba(40, 133, 63, .18); }
+#startButton:hover { background: #66c57a; opacity: 1; }
+#startButton:disabled { box-shadow: none; }
 .control-label { margin: 24px 0 9px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
 .rl-setting { display: grid; gap: 8px; margin-top: 15px; padding-top: 14px; border-top: 1px solid var(--line); }
 .rl-setting > div:first-child { display: flex; justify-content: space-between; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
@@ -38,6 +41,7 @@
 .curriculum-toggle { min-width: 92px; }
 .reward-shaping-setting { margin-top: 15px; padding-top: 1px; border-top: 1px solid var(--line); }
 .reward-shaping-setting .control-label { margin-top: 13px; }
+.reward-component-setting { margin-top: 10px; }
 .reward-toggle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .reward-toggle-grid .mode-toggle { border-left: 1px solid var(--line); }
 .reward-toggle-grid .mode-toggle[aria-pressed="true"] { border-color: var(--ink); }

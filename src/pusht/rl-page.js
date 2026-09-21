@@ -7,7 +7,15 @@ const $ = (selector) => document.querySelector(selector);
 const ROLLOUT_FRAME_SIZE = 12;
 const BUDGET_MIN = 10_000;
 const BUDGET_MAX = 1_000_000;
-const REWARD_SHAPING_TERMS = ["blockDistance", "pusherDistance", "orientation", "closeness"];
+const REWARD_COMPONENTS = [
+  "completion",
+  "blockDistance",
+  "pusherDistance",
+  "orientation",
+  "closeness",
+  "pusherWall",
+  "blockWall",
+];
 const entropyConfigs = {
   ppo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
   sac: { label: "Temperature α", min: 0, max: 0.5, step: 0.01, digits: 2 },
@@ -16,14 +24,17 @@ const world = new PushWorld({ random: createRandom(41), obstacleCount: 0 });
 const view = createView($("#arena"));
 const state = {
   algorithm: "ppo",
-  budget: 100_000,
+  budget: 1_000_000,
   horizon: 200,
   curriculum: true,
   rewardShaping: {
+    completion: true,
     blockDistance: true,
     pusherDistance: true,
     orientation: true,
     closeness: true,
+    pusherWall: false,
+    blockWall: false,
   },
   entropyByAlgorithm: { ppo: 0, sac: 0.3 },
   widthByAlgorithm: { ppo: 64, sac: 256 },
@@ -461,12 +472,15 @@ function registerWebMcpTools() {
         rewardShaping: {
           type: "object",
           properties: {
+            completion: { type: "boolean" },
             blockDistance: { type: "boolean" },
             pusherDistance: { type: "boolean" },
             orientation: { type: "boolean" },
             closeness: { type: "boolean" },
+            pusherWall: { type: "boolean" },
+            blockWall: { type: "boolean" },
           },
-          required: ["blockDistance", "pusherDistance", "orientation", "closeness"],
+          required: REWARD_COMPONENTS,
           additionalProperties: false,
         },
       },
@@ -489,7 +503,7 @@ function registerWebMcpTools() {
         input.entropyBonus < entropyConfig.min || input.entropyBonus > entropyConfig.max) {
         throw new RangeError(`Entropy must be from ${entropyConfig.min} through ${entropyConfig.max} for ${input.algorithm}.`);
       }
-      if (!input.rewardShaping || REWARD_SHAPING_TERMS.some(
+      if (!input.rewardShaping || REWARD_COMPONENTS.some(
         (term) => typeof input.rewardShaping[term] !== "boolean",
       )) {
         throw new TypeError("Every reward-shaping toggle must be true or false.");

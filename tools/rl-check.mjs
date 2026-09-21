@@ -44,6 +44,9 @@ const scaledRewardEnv = new PushTRLEnv({ distanceRewardScale: 3 });
 if (Math.abs(scaledRewardEnv.pusherDistanceRewardScale * MAX_PUSHER_SPEED - 0.01) > 1e-12) {
   throw new Error("a full-speed pusher step is not scaled to 0.01");
 }
+if (scaledRewardEnv.rewardShaping.pusherWall || scaledRewardEnv.rewardShaping.blockWall) {
+  throw new Error("wall reward components do not default to off");
+}
 const noShapingEnv = new PushTRLEnv({
   seed: 8,
   curriculum: false,
@@ -71,6 +74,7 @@ const pusherShapingEnv = new PushTRLEnv({
   rewardShaping: { blockDistance: false, orientation: false, closeness: false },
 });
 pusherShapingEnv.reset();
+const pusherDistanceBefore = pusherShapingEnv.pusherDistance;
 const pusherDirectionX = pusherShapingEnv.world.goal.x - pusherShapingEnv.world.pusher.x;
 const pusherDirectionY = pusherShapingEnv.world.goal.y - pusherShapingEnv.world.pusher.y;
 const pusherDirectionLength = Math.hypot(pusherDirectionX, pusherDirectionY);
@@ -78,8 +82,12 @@ const pusherShapingTransition = pusherShapingEnv.step(normalizedAction(
   pusherDirectionX / pusherDirectionLength * MAX_PUSHER_SPEED,
   pusherDirectionY / pusherDirectionLength * MAX_PUSHER_SPEED,
 ));
-if (Math.abs(pusherShapingTransition.reward - 0.01) > 1e-6) {
-  throw new Error(`full-speed pusher shaping is ${pusherShapingTransition.reward}, expected 0.01`);
+const expectedPusherShaping = pusherShapingEnv.pusherDistanceRewardScale *
+  (pusherDistanceBefore - pusherShapingEnv.discount * pusherShapingTransition.pusherDistance);
+if (Math.abs(pusherShapingTransition.reward - expectedPusherShaping) > 1e-6 ||
+    Math.abs(pusherShapingTransition.pusherDistanceProgress *
+      pusherShapingEnv.pusherDistanceRewardScale - 0.01) > 1e-6) {
+  throw new Error("pusher reward is not discount-consistent with a 0.01 full-step progress coefficient");
 }
 
 // The block starts near the goal, moves to the final task radius by 70%, and
@@ -125,14 +133,11 @@ if (noCurriculumEnv.world.block.x !== FIXED_BLOCK_START.x ||
 }
 console.log("curriculum: randomized bearing and matched pusher gap, near radius at 0%, final radius at 70%");
 
-// Environment contract: position and orientation progress telescope to their
-// net reductions, with exactly one additional reward on completion.
+// Environment contract: every shaping term uses gamma*Phi(next)-Phi(current),
+// and all enabled reward components sum exactly.
 const env = new PushTRLEnv({ seed: 10, horizon: 2200 });
 env.setTrainingProgress(1);
 let observation = env.reset();
-const initialDistance = env.distance;
-const initialPusherDistanceToGoal = env.pusherDistance;
-const initialOrientationError = env.orientationError;
 if (observation.length !== RL_OBSERVATION_SIZE || RL_ACTION_SIZE !== 2) throw new Error("wrong RL shape");
 const expert = new ScriptedExpert({ random: createRandom(11), tieBreak: "cw" });
 const action = new Float32Array(2);
@@ -149,31 +154,23 @@ for (let step = 0; step < 2200; step++) {
   const transition = env.step(action);
   observation = transition.observation;
   completionRewards += transition.completionReward;
-  distanceReward += transition.distanceProgress;
-  pusherDistanceReward += transition.pusherDistanceProgress;
-  orientationReward += transition.orientationProgress;
+  distanceReward += transition.distanceShapingReward;
+  pusherDistanceReward += transition.pusherDistanceShapingReward;
+  orientationReward += transition.orientationShapingReward;
   finalClosenessReward += transition.finalClosenessReward;
   totalReward += transition.reward;
   if (transition.done) { solved = transition.success; break; }
 }
-const expectedDistanceReward = initialDistance - env.distance;
-const expectedPusherDistanceReward = initialPusherDistanceToGoal - env.pusherDistance;
-const expectedOrientationReward = initialOrientationError - env.orientationError;
 console.log(
   `environment: obs ${observation.length}, action ${RL_ACTION_SIZE}, solved ${solved}, ` +
   `completion ${completionRewards}, distance reward ${distanceReward.toFixed(4)}, ` +
-  `pusher reward ${(env.pusherDistanceRewardScale * pusherDistanceReward).toFixed(4)}, ` +
+  `pusher reward ${pusherDistanceReward.toFixed(4)}, ` +
   `orientation reward ${orientationReward.toFixed(4)}, closeness ${finalClosenessReward.toFixed(4)}, ` +
   `total ${totalReward.toFixed(4)}`,
 );
 if (!solved || completionRewards !== 1) throw new Error("completion reward is wrong");
-if (Math.abs(distanceReward - expectedDistanceReward) > 1e-6) throw new Error("distance shaping does not telescope");
-if (Math.abs(pusherDistanceReward - expectedPusherDistanceReward) > 1e-6) {
-  throw new Error("pusher distance shaping does not telescope");
-}
-if (Math.abs(orientationReward - expectedOrientationReward) > 1e-6) throw new Error("orientation shaping does not telescope");
-if (Math.abs(totalReward - (1 + finalClosenessReward + expectedDistanceReward +
-    env.pusherDistanceRewardScale * expectedPusherDistanceReward + expectedOrientationReward)) > 1e-6) {
+if (Math.abs(totalReward - (1 + finalClosenessReward + distanceReward +
+    pusherDistanceReward + orientationReward)) > 1e-5) {
   throw new Error("combined reward is wrong");
 }
 
@@ -186,6 +183,9 @@ const orientationTransition = orientationEnv.step(Float32Array.of(0, 0));
 console.log(`orientation progress: ${orientationTransition.orientationProgress.toFixed(4)}`);
 if (Math.abs(orientationTransition.orientationProgress - 0.5) > 1e-6) {
   throw new Error("orientation shaping is not normalized angular progress");
+}
+if (Math.abs(orientationTransition.orientationShapingReward - (1 - orientationEnv.discount * 0.5)) > 1e-6) {
+  throw new Error("orientation shaping does not use the environment discount");
 }
 
 const closenessEnv = new PushTRLEnv({ seed: 16, horizon: 1 });
@@ -206,8 +206,7 @@ if (Math.abs(closenessTransition.finalClosenessReward - closenessTransition.cove
   throw new Error("terminal closeness reward does not equal final coverage");
 }
 
-// Touching any outer wall is an immediate terminal failure whose -1 penalty is
-// summed with the ordinary shaping terms from that final transition.
+// Pusher-wall contact remains terminal, but its reward component defaults off.
 const wallEnv = new PushTRLEnv({ seed: 15, horizon: 100, curriculum: false });
 wallEnv.reset();
 let wallTransition = null;
@@ -220,10 +219,10 @@ console.log(
 if (!wallTransition?.done || !wallTransition.wallContact || wallTransition.success || wallTransition.truncated) {
   throw new Error("wall contact did not terminate as a failure");
 }
-const expectedWallReward = wallTransition.wallPenalty + wallTransition.distanceProgress +
-  wallEnv.pusherDistanceRewardScale * wallTransition.pusherDistanceProgress + wallTransition.orientationProgress;
-if (wallTransition.wallPenalty !== -1 || Math.abs(wallTransition.reward - expectedWallReward) > 1e-9) {
-  throw new Error("wall contact penalty was not summed with shaping");
+const expectedWallReward = wallTransition.distanceShapingReward +
+  wallTransition.pusherDistanceShapingReward + wallTransition.orientationShapingReward;
+if (wallTransition.wallPenalty !== 0 || Math.abs(wallTransition.reward - expectedWallReward) > 1e-9) {
+  throw new Error("disabled pusher-wall penalty changed the reward");
 }
 
 // Block-wall contact contributes an additive -10 penalty without changing the
@@ -237,6 +236,7 @@ const blockWallEnv = new PushTRLEnv({
     pusherDistance: false,
     orientation: false,
     closeness: false,
+    blockWall: true,
   },
 });
 blockWallEnv.reset();
