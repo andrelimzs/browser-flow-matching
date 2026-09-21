@@ -5,16 +5,21 @@ import { DEFAULT_DRGRPO_GROUP_SIZE, trainDrGRPO } from "./rl/grpo.js";
 import { trainPPO } from "./rl/ppo.js";
 
 const EVALUATION_ROLLOUTS = 10;
-let stochasticEvaluation = false;
+let deterministicEvaluation = false;
 let training = false;
 
-const yieldToMessages = () => self.scheduler?.yield
-  ? self.scheduler.yield()
-  : new Promise((resolve) => setTimeout(resolve, 0));
+// A timer-task boundary gives already queued parent-window messages a chance to
+// run before training resumes. scheduler.yield() may prioritize its continuation
+// ahead of the evaluation-mode message, making an in-flight toggle appear stuck.
+const yieldToMessages = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 self.onmessage = async ({ data }) => {
   if (data.type === "set-evaluation-mode") {
-    stochasticEvaluation = Boolean(data.stochastic);
+    deterministicEvaluation = Boolean(data.deterministic);
+    self.postMessage({
+      type: "evaluation-mode",
+      deterministicEvaluation,
+    });
     return;
   }
   if (data.type !== "start") return;
@@ -31,9 +36,9 @@ self.onmessage = async ({ data }) => {
     rewardShaping,
     rewardWeights,
     seed,
-    stochasticEval,
+    deterministicEval,
   } = data;
-  stochasticEvaluation = Boolean(stochasticEval);
+  deterministicEvaluation = Boolean(deterministicEval);
   const env = new PushTRLEnv({ seed, horizon, curriculum, rewardShaping, rewardWeights });
   const random = createRandom(seed + 20_000);
   let lastLoggedGroup = null;
@@ -59,7 +64,7 @@ self.onmessage = async ({ data }) => {
       evaluationEnv.setTrainingProgress(progress.steps / totalSteps);
       const rollout = recordPolicyRollout(models.actor, evaluationEnv, {
         random: createRandom(seed + 30_000 + episode),
-        deterministic: !stochasticEvaluation,
+        deterministic: deterministicEvaluation,
         estimateValue,
       });
       evaluationRollouts.push(rollout);
@@ -88,7 +93,7 @@ self.onmessage = async ({ data }) => {
       type: "rollout",
       progress,
       step: progress.steps,
-      stochasticEvaluation,
+      deterministicEvaluation,
       evaluationRollouts: EVALUATION_ROLLOUTS,
       evaluationSuccessRate: evaluationSuccesses / EVALUATION_ROLLOUTS,
       representativeReturn: rollout.return,

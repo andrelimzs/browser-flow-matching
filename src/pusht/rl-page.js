@@ -42,7 +42,7 @@ const state = {
   budget: 1_000_000,
   horizon: 200,
   curriculum: true,
-  stochasticEval: false,
+  deterministicEval: false,
   rewardShaping: {
     completion: true,
     blockDistance: true,
@@ -151,8 +151,8 @@ function updateWidthControl() {
   });
 }
 
-function updateStochasticEvalControl() {
-  $("#stochasticEvalToggle").setAttribute("aria-pressed", String(state.stochasticEval));
+function updateDeterministicEvalControl() {
+  $("#deterministicEvalToggle").setAttribute("aria-pressed", String(state.deterministicEval));
 }
 
 function drawReturnChart() {
@@ -359,7 +359,7 @@ function selectRollout(index) {
   state.frame = 0;
   state.lastFrameAt = 0;
   const rollout = state.rollouts[state.selected];
-  const evaluationMode = rollout.stochasticEvaluation ? "Stochastic eval" : "Deterministic eval";
+  const evaluationMode = rollout.deterministicEvaluation ? "Deterministic eval" : "Stochastic eval";
   $("#rolloutSlider").value = String(state.selected);
   $("#rolloutStepOutput").textContent = `step ${rollout.step.toLocaleString()}`;
   $("#selectedStep").textContent = rollout.step.toLocaleString();
@@ -397,7 +397,7 @@ function addRollout(message) {
     representativeReturn: message.representativeReturn,
     evaluationRollouts: message.evaluationRollouts,
     evaluationSuccessRate: message.evaluationSuccessRate,
-    stochasticEvaluation: Boolean(message.stochasticEvaluation),
+    deterministicEvaluation: Boolean(message.deterministicEvaluation),
     trainReturn: Number.isFinite(message.trainReturn) ? message.trainReturn : null,
     success: message.success,
     wallContact: message.wallContact,
@@ -446,7 +446,7 @@ function resetRun() {
   $("#selectedCoverage").textContent = "—";
   $("#selectedSuccessRate").textContent = "—";
   $("#rolloutReturnLabel").textContent = "eval mean — · path —";
-  $("#canvasPathLabel").textContent = `${state.stochasticEval ? "Stochastic" : "Deterministic"} eval path · action μ / 1σ radar`;
+  $("#canvasPathLabel").textContent = `${state.deterministicEval ? "Deterministic" : "Stochastic"} eval path · action μ / 1σ radar`;
   $("#advantageLegend").hidden = true;
   $("#valueLegendItem").hidden = false;
   $("#valueLegend").textContent = "V(s)";
@@ -477,6 +477,12 @@ function startTraining() {
       addRollout(data);
       return;
     }
+    if (data.type === "evaluation-mode") {
+      state.deterministicEval = Boolean(data.deterministicEvaluation);
+      updateDeterministicEvalControl();
+      $("#statusNote").textContent = `${state.deterministicEval ? "Deterministic" : "Stochastic"} evaluation starts with the next logged rollout.`;
+      return;
+    }
     if (data.type === "done") {
       state.worker?.terminate();
       state.worker = null;
@@ -501,7 +507,7 @@ function startTraining() {
     curriculum: state.curriculum,
     rewardShaping: { ...state.rewardShaping },
     rewardWeights: { ...state.rewardWeights },
-    stochasticEval: state.stochasticEval,
+    deterministicEval: state.deterministicEval,
     seed: state.seed,
   });
 }
@@ -608,7 +614,7 @@ function registerWebMcpTools() {
         width: { type: "integer", enum: [64, 128, 256] },
         entropyBonus: { type: "number", minimum: 0, maximum: 0.5 },
         curriculum: { type: "boolean" },
-        stochasticEval: { type: "boolean" },
+        deterministicEval: { type: "boolean" },
         rewardShaping: {
           type: "object",
           properties: {
@@ -673,7 +679,7 @@ function registerWebMcpTools() {
       state.widthByAlgorithm[state.algorithm] = input.width;
       state.entropyByAlgorithm[state.algorithm] = input.entropyBonus;
       state.curriculum = input.curriculum;
-      if (typeof input.stochasticEval === "boolean") state.stochasticEval = input.stochasticEval;
+      if (typeof input.deterministicEval === "boolean") state.deterministicEval = input.deterministicEval;
       state.rewardShaping = { ...input.rewardShaping };
       state.rewardWeights = { ...input.rewardWeights };
       document.querySelectorAll("[data-algorithm]").forEach((button) => {
@@ -686,7 +692,7 @@ function registerWebMcpTools() {
       $("#horizonOutput").textContent = state.horizon.toLocaleString();
       updateEntropyControl();
       updateCurriculumControl();
-      updateStochasticEvalControl();
+      updateDeterministicEvalControl();
       updateRewardShapingControls();
       startTraining();
       return {
@@ -694,7 +700,7 @@ function registerWebMcpTools() {
         algorithm: state.algorithm,
         budget: state.budget,
         curriculum: state.curriculum,
-        stochasticEval: state.stochasticEval,
+        deterministicEval: state.deterministicEval,
         rewardShaping: { ...state.rewardShaping },
         rewardWeights: { ...state.rewardWeights },
       };
@@ -717,7 +723,7 @@ function registerWebMcpTools() {
         width: state.widthByAlgorithm[state.algorithm],
         entropyBonus: state.entropyByAlgorithm[state.algorithm],
         curriculum: state.curriculum,
-        stochasticEval: state.stochasticEval,
+        deterministicEval: state.deterministicEval,
         rewardShaping: { ...state.rewardShaping },
         rewardWeights: { ...state.rewardWeights },
         loggedRollouts: state.rollouts.length,
@@ -787,12 +793,12 @@ $("#curriculumToggle").addEventListener("click", () => {
   updateCurriculumControl();
 });
 
-$("#stochasticEvalToggle").addEventListener("click", () => {
-  state.stochasticEval = !state.stochasticEval;
-  updateStochasticEvalControl();
+$("#deterministicEvalToggle").addEventListener("click", () => {
+  state.deterministicEval = !state.deterministicEval;
+  updateDeterministicEvalControl();
   state.worker?.postMessage({
     type: "set-evaluation-mode",
-    stochastic: state.stochasticEval,
+    deterministic: state.deterministicEval,
   });
 });
 
@@ -845,7 +851,7 @@ window.addEventListener("beforeunload", () => {
 updateEntropyControl();
 updateWidthControl();
 updateCurriculumControl();
-updateStochasticEvalControl();
+updateDeterministicEvalControl();
 updateRewardShapingControls();
 resetRun();
 requestAnimationFrame(draw);
