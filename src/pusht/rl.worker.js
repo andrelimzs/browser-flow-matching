@@ -44,6 +44,7 @@ self.onmessage = ({ data }) => {
       type: "rollout",
       progress,
       step: progress.steps,
+      trainReturn: progress.trainReturn ?? progress.groupReturnMean ?? null,
       hasValueEstimate: progress.algorithm === "ppo",
       groupPaths,
       groupAdvantages,

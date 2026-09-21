@@ -492,6 +492,7 @@ console.log("GAE: interleaved environments, terminal trace cut, and final bootst
 // Short algorithm smoke runs catch non-finite losses and buffer mistakes. They
 // are not expected to solve the task in a few hundred interactions.
 let ppoCheckpoints = 0;
+let ppoTrainReturn = null;
 const ppo = trainPPO({
   env: new PushTRLEnv({ seed: 20, horizon: 80 }),
   random: createRandom(21),
@@ -503,12 +504,17 @@ const ppo = trainPPO({
   progressEvery: 200,
   onCheckpoint(progress) {
     if (progress.steps !== 200) throw new Error(`unexpected PPO checkpoint ${progress.steps}`);
+    if (!Number.isFinite(progress.trainReturn) || progress.trainEpisodes < 1) {
+      throw new Error("PPO checkpoint did not include completed-episode training returns");
+    }
+    ppoTrainReturn = progress.trainReturn;
     ppoCheckpoints += 1;
   },
 });
 console.log(`PPO smoke: ${ppo.steps} steps, finite ${finiteModel(ppo.actor) && finiteModel(ppo.critic)}`);
 if (!finiteModel(ppo.actor) || !finiteModel(ppo.critic)) throw new Error("PPO produced non-finite parameters");
 if (ppoCheckpoints !== 1) throw new Error(`expected one PPO checkpoint, got ${ppoCheckpoints}`);
+if (!Number.isFinite(ppoTrainReturn)) throw new Error("PPO training return was not finite");
 if (ppo.actor.actionSquash !== "clip" || ppo.actor.logStd.length !== 2) {
   throw new Error("PPO actor is not an unsquashed Normal with global log standard deviation");
 }

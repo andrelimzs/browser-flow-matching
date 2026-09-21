@@ -102,6 +102,8 @@ export function trainPPO({
   let episodes = 0;
   let successes = 0;
   let nextCheckpoint = progressEvery > 0 ? progressEvery : Infinity;
+  let checkpointReturnSum = 0;
+  let checkpointEpisodes = 0;
 
   while (steps < totalSteps) {
     const learningRateFraction = annealLearningRate ? 1 - steps / totalSteps : 1;
@@ -147,6 +149,8 @@ export function trainPPO({
         dones[index] = transition.done ? 1 : 0;
         let nextObservation = transition.observation;
         if (transition.done) {
+          checkpointReturnSum += environments[environment].episodeReturn;
+          checkpointEpisodes += 1;
           environments[environment].setTrainingProgress?.((steps + index + 1) / totalSteps);
           nextObservation = environments[environment].reset();
         }
@@ -159,13 +163,20 @@ export function trainPPO({
       cursor += active;
       const collectedSteps = steps + cursor;
       while (collectedSteps >= nextCheckpoint) {
+        const trainReturn = checkpointEpisodes > 0
+          ? checkpointReturnSum / checkpointEpisodes
+          : null;
         onCheckpoint({
           algorithm: "ppo",
           steps: nextCheckpoint,
           episodes,
           successes,
           rolloutSuccesses,
+          trainReturn,
+          trainEpisodes: checkpointEpisodes,
         }, { actor, critic });
+        checkpointReturnSum = 0;
+        checkpointEpisodes = 0;
         nextCheckpoint += progressEvery;
       }
     }

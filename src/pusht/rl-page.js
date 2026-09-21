@@ -169,8 +169,11 @@ function drawReturnChart() {
 
   const padding = { left: 10, right: 10, top: 12, bottom: 14 };
   const values = state.rollouts.map((rollout) => rollout.return);
-  let minimum = Math.min(...values);
-  let maximum = Math.max(...values);
+  const trainValues = state.rollouts.map((rollout) => rollout.trainReturn);
+  const finiteTrainValues = trainValues.filter(Number.isFinite);
+  const chartValues = [...values, ...finiteTrainValues];
+  let minimum = Math.min(...chartValues);
+  let maximum = Math.max(...chartValues);
   if (minimum === maximum) {
     minimum -= 0.05;
     maximum += 0.05;
@@ -187,12 +190,36 @@ function drawReturnChart() {
   context.lineWidth = 2;
   context.stroke();
 
+  context.beginPath();
+  let trainSegmentStarted = false;
+  trainValues.forEach((value, index) => {
+    if (!Number.isFinite(value)) {
+      trainSegmentStarted = false;
+      return;
+    }
+    if (!trainSegmentStarted) context.moveTo(x(index), y(value));
+    else context.lineTo(x(index), y(value));
+    trainSegmentStarted = true;
+  });
+  context.save();
+  context.setLineDash([4, 3]);
+  context.strokeStyle = "#d06a3e";
+  context.lineWidth = 1.6;
+  context.stroke();
+  context.restore();
+
   if (state.selected >= 0) {
     const selected = state.rollouts[state.selected];
     context.beginPath();
     context.arc(x(state.selected), y(selected.return), 4, 0, Math.PI * 2);
     context.fillStyle = "#ed6b55";
     context.fill();
+    if (Number.isFinite(selected.trainReturn)) {
+      context.beginPath();
+      context.arc(x(state.selected), y(selected.trainReturn), 3, 0, Math.PI * 2);
+      context.fillStyle = "#d06a3e";
+      context.fill();
+    }
   }
 }
 
@@ -359,6 +386,7 @@ function addRollout(message) {
   state.rollouts.push({
     step: message.step,
     return: message.return,
+    trainReturn: Number.isFinite(message.trainReturn) ? message.trainReturn : null,
     success: message.success,
     wallContact: message.wallContact,
     blockWallContact: message.blockWallContact,

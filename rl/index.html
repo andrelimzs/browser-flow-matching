@@ -97,10 +97,14 @@
 
             <div class="return-panel">
               <div class="return-heading">
-                <div><p class="label">Evaluation return</p><strong id="latestReturn">—</strong></div>
+                <div><p class="label">Latest evaluation return</p><strong id="latestReturn">—</strong></div>
                 <span>every 200 steps</span>
               </div>
-              <canvas id="returnCanvas" aria-label="Policy rollout return over training time"></canvas>
+              <div class="plot-legend return-legend" aria-hidden="true">
+                <span><i class="evaluation-return-swatch"></i><b>Deterministic eval</b></span>
+                <span><i class="training-return-swatch"></i><b>Train episode mean</b></span>
+              </div>
+              <canvas id="returnCanvas" aria-label="Deterministic evaluation and mean training episode returns over time"></canvas>
             </div>
 
             <p class="control-label">Algorithm</p>
