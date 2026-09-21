@@ -26,7 +26,7 @@ export function trainPPO({
   gamma = 0.99,
   gaeLambda = 0.95,
   clipRatio = 0.2,
-  entropyCoefficient = 0.01,
+  entropyCoefficient = 0.02,
   actorLearningRate = 3e-4,
   criticLearningRate = 1e-3,
   onProgress = () => {},

@@ -140,6 +140,21 @@ console.log(`recorded rollout: ${recordedRollout.count} frames, ${recordedRollou
 if (recordedRollout.frames.length !== recordedRollout.count * 10 || !recordedRollout.frames.every(Number.isFinite)) {
   throw new Error("recorded rollout action distribution has the wrong shape or non-finite values");
 }
+const sampledRollout = recordPolicyRollout(ppo.actor, new PushTRLEnv({ seed: 23, horizon: 80 }), {
+  random: createRandom(24),
+  deterministic: false,
+});
+let sampledTravel = 0;
+for (let frame = 1; frame < sampledRollout.count; frame++) {
+  const before = (frame - 1) * 10;
+  const after = frame * 10;
+  sampledTravel += Math.hypot(
+    sampledRollout.frames[after] - sampledRollout.frames[before],
+    sampledRollout.frames[after + 1] - sampledRollout.frames[before + 1],
+  );
+}
+console.log(`sampled rollout: ${sampledRollout.count} frames, pusher travel ${sampledTravel.toFixed(4)}`);
+if (sampledTravel <= 0) throw new Error("sampled rollout did not execute policy noise");
 
 const sac = trainSAC({
   env: new PushTRLEnv({ seed: 30, horizon: 80 }),

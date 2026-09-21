@@ -125,7 +125,7 @@ export function evaluatePolicy(actor, env, episodes = 5) {
   return { successes, episodes, meanCoverage: coverage / episodes };
 }
 
-export function recordPolicyRollout(actor, env) {
+export function recordPolicyRollout(actor, env, { random = Math.random, deterministic = true } = {}) {
   const valuesPerFrame = 10;
   const frames = new Float32Array((env.horizon + 1) * valuesPerFrame);
   const action = new Float32Array(2);
@@ -154,7 +154,7 @@ export function recordPolicyRollout(actor, env) {
   for (;;) {
     actor.inputBuffer().set(observation, 0);
     const output = actor.forward(1);
-    const sample = actorSample(output, 0, Math.random, true);
+    const sample = actorSample(output, 0, random, deterministic);
     recordFrame(sample);
     action[0] = sample.actionX;
     action[1] = sample.actionY;
@@ -166,7 +166,7 @@ export function recordPolicyRollout(actor, env) {
     wallContact = transition.wallContact;
     if (transition.done) {
       actor.inputBuffer().set(observation, 0);
-      recordFrame(actorSample(actor.forward(1), 0, Math.random, true));
+      recordFrame(actorSample(actor.forward(1), 0, random, deterministic));
       break;
     }
   }

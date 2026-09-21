@@ -13,7 +13,10 @@ self.onmessage = ({ data }) => {
 
   const onProgress = (progress, models) => {
     const evaluationEnv = new PushTRLEnv({ seed: seed + 10_000, horizon });
-    const rollout = recordPolicyRollout(models.actor, evaluationEnv);
+    const rollout = recordPolicyRollout(models.actor, evaluationEnv, {
+      random: createRandom(seed + 30_000),
+      deterministic: false,
+    });
     self.postMessage({
       type: "rollout",
       progress,

@@ -94,7 +94,8 @@ The current zero-obstacle diagonal task keeps lift disabled and removes the expe
 
 The `rl-policy` branch includes two dependency-free continuous-control baselines. PPO is on-policy with
 GAE and a clipped objective; SAC uses a replay buffer, twin Q-functions, target networks, and a squashed
-Gaussian actor. Both deliberately use the same minimal task definition:
+Gaussian actor. PPO uses a `0.02` entropy coefficient and SAC uses a fixed `0.3` temperature to sustain
+exploration. Both deliberately use the same minimal task definition:
 
 - observation: one normalized 11-value simulator frame, with no history or frame stack
 - action: normalized `dx, dy` in `[-1, 1]`, scaled to one `0.017` pusher step

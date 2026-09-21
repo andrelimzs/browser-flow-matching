@@ -65,7 +65,7 @@ export function trainSAC({
   warmupSteps = 2_000,
   gamma = 0.99,
   tau = 0.005,
-  alpha = 0.2,
+  alpha = 0.3,
   actorLearningRate = 3e-4,
   criticLearningRate = 3e-4,
   progressEvery = 5000,
