@@ -107,12 +107,20 @@ function formatAlgorithm(algorithm) {
   return algorithm === "drgrpo" ? "Dr.GRPO" : algorithm.toUpperCase();
 }
 
-function advantagePathColor(advantage) {
-  const strength = Math.min(1, Math.abs(advantage) / 2);
-  const alpha = 0.2 + strength * 0.48;
-  if (advantage > 0.05) return `rgba(29, 102, 219, ${alpha})`;
-  if (advantage < -0.05) return `rgba(218, 107, 57, ${alpha})`;
-  return "rgba(90, 96, 92, .24)";
+function advantagePathStyle(advantage, positiveScale, negativeScale) {
+  if (Math.abs(advantage) < 1e-8) {
+    return { color: "rgba(90, 96, 92, .28)", width: 0.9 };
+  }
+  const scale = advantage > 0 ? positiveScale : negativeScale;
+  const normalized = Math.min(1, Math.abs(advantage) / Math.max(1e-8, scale));
+  const strength = Math.sqrt(normalized);
+  const alpha = 0.3 + strength * 0.6;
+  return {
+    color: advantage > 0
+      ? `rgba(29, 102, 219, ${alpha})`
+      : `rgba(218, 92, 43, ${alpha})`,
+    width: 0.9 + strength * 1.35,
+  };
 }
 
 function budgetFromExponent(exponent) {
@@ -366,8 +374,9 @@ function selectRollout(index) {
   $("#rolloutPill").dataset.active = "record";
   const peerLabel = `${rollout.evaluationPaths.length} faded eval paths`;
   $("#canvasPathLabel").textContent = rollout.groupPaths.length
-    ? `Representative eval path · ${peerLabel} · ${rollout.groupPaths.length} Dr.GRPO paths`
+    ? `Representative eval path · ${peerLabel} · ${rollout.groupPaths.length} GRPO paths`
     : `Representative eval path · ${peerLabel} · action μ / 1σ radar`;
+  $("#advantageLegend").hidden = !rollout.groupPaths.length;
   $("#valueLegendItem").hidden = !rollout.hasValueEstimate;
   $("#valueLegend").textContent = "V(s)";
   $("#valuePlotTitle").textContent = rollout.hasValueEstimate
@@ -442,6 +451,7 @@ function resetRun() {
   $("#selectedOutcome").textContent = "—";
   $("#rolloutReturnLabel").textContent = "eval mean — · path —";
   $("#canvasPathLabel").textContent = "Representative eval path · action μ / 1σ radar";
+  $("#advantageLegend").hidden = true;
   $("#valueLegendItem").hidden = false;
   $("#valueLegend").textContent = "V(s)";
   $("#valuePlotTitle").textContent = "Estimated remaining return V(s)";
@@ -533,11 +543,22 @@ function draw(timestamp) {
   world.block.x = rollout.frames[offset + 2];
   world.block.y = rollout.frames[offset + 3];
   world.block.angle = rollout.frames[offset + 4];
-  const groupPaths = rollout.groupPaths.map((points, index) => ({
-    points,
-    color: advantagePathColor(rollout.groupAdvantages[index] ?? 0),
-    width: 1.35,
-  }));
+  const positiveAdvantageScale = Math.max(
+    1e-8,
+    ...rollout.groupAdvantages.filter((value) => value > 0),
+  );
+  const negativeAdvantageScale = Math.max(
+    1e-8,
+    ...rollout.groupAdvantages.filter((value) => value < 0).map((value) => -value),
+  );
+  const groupPaths = rollout.groupPaths.map((points, index) => {
+    const style = advantagePathStyle(
+      rollout.groupAdvantages[index] ?? 0,
+      positiveAdvantageScale,
+      negativeAdvantageScale,
+    );
+    return { points, ...style };
+  });
   const evaluationPaths = rollout.evaluationPaths.map((points) => ({
     points,
     cursor: state.frame + 1,

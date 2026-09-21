@@ -50,6 +50,9 @@
               <canvas id="arena" aria-label="Selected reinforcement-learning policy rollout"></canvas>
               <div class="canvas-label canvas-label-source" id="canvasPathLabel">Representative eval path · action μ / 1σ radar</div>
               <div class="canvas-label canvas-label-target"><span id="rolloutReturnLabel">eval mean — · path —</span></div>
+              <div class="advantage-legend" id="advantageLegend" hidden>
+                <span>− advantage</span><i aria-hidden="true"></i><span>+ advantage</span>
+              </div>
               <div class="rollout-empty" id="rolloutEmpty">
                 <strong>No rollouts logged yet</strong>
                 <span>Start training to capture a deterministic rollout every 200 steps.</span>

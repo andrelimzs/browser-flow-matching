@@ -7,6 +7,9 @@
 .rl-workspace { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(360px, .72fr); gap: 18px; align-items: stretch; }
 .rollout-card { min-width: 0; }
 .rl-canvas-shell { height: clamp(420px, 49vw, 650px); }
+.advantage-legend { position: absolute; left: 16px; bottom: 14px; z-index: 2; display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid rgba(25, 28, 27, .13); background: rgba(251, 250, 246, .84); backdrop-filter: blur(6px); color: var(--muted); font: 8px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .04em; pointer-events: none; }
+.advantage-legend[hidden] { display: none; }
+.advantage-legend i { width: 72px; height: 5px; background: linear-gradient(90deg, rgb(218, 92, 43), rgb(126, 131, 127), rgb(29, 102, 219)); }
 .rollout-empty { position: absolute; inset: 0; display: grid; place-content: center; gap: 7px; padding: 30px; text-align: center; color: var(--muted); background: rgba(232,230,223,.48); pointer-events: none; }
 .rollout-empty[hidden] { display: none; }
 .rollout-empty strong { color: var(--ink); font-size: 18px; }
