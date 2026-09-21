@@ -398,6 +398,7 @@ function addRollout(message) {
     count: message.count,
     algorithm: message.progress.algorithm,
     hasValueEstimate: message.hasValueEstimate,
+    evaluationBlockTracks: message.evaluationBlockTracks ?? [],
     evaluationPaths: message.evaluationPaths ?? [],
     groupPaths: state.latestGroupPaths,
     groupAdvantages: state.latestGroupAdvantages,
@@ -543,12 +544,21 @@ function draw(timestamp) {
     color: "rgba(29, 102, 219, .14)",
     width: 1.1,
   }));
+  const evaluationBlocks = rollout.evaluationBlockTracks.map((track) => {
+    const peerFrame = Math.min(state.frame, track.length / 3 - 1) * 3;
+    return {
+      x: track[peerFrame],
+      y: track[peerFrame + 1],
+      angle: track[peerFrame + 2],
+    };
+  });
   view.draw(world, {
     paths: [
       ...groupPaths,
       ...evaluationPaths,
       { points: rollout.path, cursor: state.frame + 1, color: "rgba(25, 28, 27, .78)", width: 1.9 },
     ],
+    ghosts: evaluationBlocks,
     coverage: rollout.frames[offset + 5],
     actionDistribution: {
       meanX: rollout.frames[offset + 6],

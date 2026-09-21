@@ -124,6 +124,19 @@ export function createView(canvas) {
       context.setLineDash([]);
     }
 
+    // Faded peer block poses used by multi-rollout evaluation playback.
+    if (options.ghosts) {
+      for (const pose of options.ghosts) {
+        const ghost = teeOutline(pose);
+        polygon(ghost);
+        context.fillStyle = "rgba(38, 44, 41, .065)";
+        context.fill();
+        context.strokeStyle = "rgba(38, 44, 41, .2)";
+        context.lineWidth = 0.9;
+        context.stroke();
+      }
+    }
+
     // Obstacles
     for (const obstacle of world.obstacles) {
       context.beginPath();
@@ -258,7 +271,7 @@ export function createView(canvas) {
       };
 
       context.save();
-      context.strokeStyle = "rgba(29, 102, 219, .18)";
+      context.strokeStyle = "rgba(237, 107, 85, .18)";
       context.lineWidth = 1;
       context.beginPath();
       context.arc(centerX, centerY, radarRadius, 0, Math.PI * 2);
@@ -282,9 +295,9 @@ export function createView(canvas) {
         else context.lineTo(x, y);
       }
       context.closePath();
-      context.fillStyle = "rgba(29, 102, 219, .13)";
+      context.fillStyle = "rgba(237, 107, 85, .13)";
       context.fill();
-      context.strokeStyle = "rgba(29, 102, 219, .55)";
+      context.strokeStyle = "rgba(237, 107, 85, .55)";
       context.lineWidth = 1.2;
       context.stroke();
 
@@ -294,12 +307,12 @@ export function createView(canvas) {
       context.beginPath();
       context.moveTo(centerX, centerY);
       context.lineTo(meanPointX, meanPointY);
-      context.strokeStyle = "rgba(29, 102, 219, .8)";
+      context.strokeStyle = "rgba(237, 107, 85, .8)";
       context.lineWidth = 1.5;
       context.stroke();
       context.beginPath();
       context.arc(meanPointX, meanPointY, 2.8, 0, Math.PI * 2);
-      context.fillStyle = "rgba(29, 102, 219, .88)";
+      context.fillStyle = "rgba(237, 107, 85, .88)";
       context.fill();
       context.restore();
     }

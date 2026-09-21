@@ -19,6 +19,7 @@ import {
 import {
   makePPOActor,
   recordPolicyRollout,
+  rolloutBlockTrack,
   rolloutPusherPath,
   simpleMovingAverage,
 } from "../src/pusht/rl/common.js";
@@ -542,6 +543,13 @@ const recordedPath = rolloutPusherPath(recordedRollout.frames, recordedRollout.c
 if (recordedPath.length !== recordedRollout.count * 2 ||
     recordedPath[0] !== recordedRollout.frames[0] || recordedPath[1] !== recordedRollout.frames[1]) {
   throw new Error("recorded rollout pusher path extraction is incorrect");
+}
+const recordedBlockTrack = rolloutBlockTrack(recordedRollout.frames, recordedRollout.count);
+if (recordedBlockTrack.length !== recordedRollout.count * 3 ||
+    recordedBlockTrack[0] !== recordedRollout.frames[2] ||
+    recordedBlockTrack[1] !== recordedRollout.frames[3] ||
+    recordedBlockTrack[2] !== recordedRollout.frames[4]) {
+  throw new Error("recorded rollout block track extraction is incorrect");
 }
 if (recordedRollout.squashed) throw new Error("PPO rollout was marked as tanh-squashed");
 let recordedReward = 0;

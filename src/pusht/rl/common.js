@@ -270,6 +270,16 @@ export function rolloutPusherPath(frames, count, frameSize = 12) {
   return path;
 }
 
+export function rolloutBlockTrack(frames, count, frameSize = 12) {
+  const track = new Float32Array(count * 3);
+  for (let index = 0; index < count; index++) {
+    track[index * 3] = frames[index * frameSize + 2];
+    track[index * 3 + 1] = frames[index * frameSize + 3];
+    track[index * 3 + 2] = frames[index * frameSize + 4];
+  }
+  return track;
+}
+
 export function evaluatePolicy(actor, env, episodes = 5) {
   let successes = 0;
   let coverage = 0;
