@@ -365,15 +365,7 @@ function selectRollout(index) {
   $("#selectedStep").textContent = rollout.step.toLocaleString();
   $("#selectedReturn").textContent = formatReturn(rollout.return);
   $("#selectedCoverage").textContent = `${(rollout.coverage * 100).toFixed(1)}%`;
-  $("#selectedOutcome").textContent = rollout.success
-    ? "Complete"
-    : rollout.wallContact
-      ? "Wall contact"
-      : rollout.blockWallContact
-        ? "Block wall"
-        : rollout.stalled
-          ? "No movement"
-          : "Timed out";
+  $("#selectedSuccessRate").textContent = `${(rollout.evaluationSuccessRate * 100).toFixed(0)}%`;
   $("#rolloutReturnLabel").textContent =
     `${evaluationMode.toLowerCase()} mean ${formatReturn(rollout.return)} · path ${formatReturn(rollout.representativeReturn)}`;
   $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
@@ -404,6 +396,7 @@ function addRollout(message) {
     return: message.return,
     representativeReturn: message.representativeReturn,
     evaluationRollouts: message.evaluationRollouts,
+    evaluationSuccessRate: message.evaluationSuccessRate,
     stochasticEvaluation: Boolean(message.stochasticEvaluation),
     trainReturn: Number.isFinite(message.trainReturn) ? message.trainReturn : null,
     success: message.success,
@@ -451,7 +444,7 @@ function resetRun() {
   $("#selectedStep").textContent = "—";
   $("#selectedReturn").textContent = "—";
   $("#selectedCoverage").textContent = "—";
-  $("#selectedOutcome").textContent = "—";
+  $("#selectedSuccessRate").textContent = "—";
   $("#rolloutReturnLabel").textContent = "eval mean — · path —";
   $("#canvasPathLabel").textContent = `${state.stochasticEval ? "Stochastic" : "Deterministic"} eval path · action μ / 1σ radar`;
   $("#advantageLegend").hidden = true;
@@ -734,6 +727,7 @@ function registerWebMcpTools() {
           return: selected.return,
           coverage: selected.coverage,
           success: selected.success,
+          evaluationSuccessRate: selected.evaluationSuccessRate,
         } : null,
       };
     },
