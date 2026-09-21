@@ -286,8 +286,10 @@ console.log(
 if (!closenessTransition.truncated || closenessTransition.success || closenessTransition.wallContact) {
   throw new Error("closeness test did not terminate by horizon");
 }
-if (Math.abs(closenessTransition.finalClosenessReward - closenessTransition.coverage) > 1e-6) {
-  throw new Error("terminal closeness reward does not equal final coverage");
+const expectedClosenessReward = Math.exp(-closenessTransition.distance) +
+  Math.exp(-closenessTransition.orientationError);
+if (Math.abs(closenessTransition.finalClosenessReward - expectedClosenessReward) > 1e-6) {
+  throw new Error("terminal closeness reward does not match exp(-distance) + exp(-angle error)");
 }
 
 // Pusher-wall contact remains terminal, but its reward component defaults off.

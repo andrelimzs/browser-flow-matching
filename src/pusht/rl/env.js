@@ -236,7 +236,9 @@ export class PushTRLEnv {
     const inactivityPenalty = stalled && this.rewardShaping.inactivity ? -1 : 0;
     const truncated = !success && !wallContact && !stalled && this.episodeSteps >= this.horizon;
     const done = success || wallContact || stalled || truncated;
-    const finalClosenessReward = done && !wallContact && !stalled && this.rewardShaping.closeness ? coverage : 0;
+    const finalClosenessReward = done && !wallContact && !stalled && this.rewardShaping.closeness
+      ? Math.exp(-distance) + Math.exp(-orientationError)
+      : 0;
     const reward = completionReward + finalClosenessReward + wallPenalty + blockWallPenalty +
       inactivityPenalty +
       (this.rewardShaping.blockDistance ? distanceShapingReward : 0) +
