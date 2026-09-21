@@ -1,6 +1,6 @@
 import { createRandom } from "./sim.js";
 import { PushTRLEnv } from "./rl/env.js";
-import { recordPolicyRollout } from "./rl/common.js";
+import { recordPolicyRollout, rolloutPusherPath } from "./rl/common.js";
 import { DEFAULT_DRGRPO_GROUP_SIZE, trainDrGRPO } from "./rl/grpo.js";
 import { trainPPO } from "./rl/ppo.js";
 
@@ -45,6 +45,9 @@ self.onmessage = ({ data }) => {
       Math.abs(candidate.return - evaluationReturn) < Math.abs(closest.return - evaluationReturn)
         ? candidate
         : closest);
+    const evaluationPaths = evaluationRollouts
+      .filter((candidate) => candidate !== rollout)
+      .map((candidate) => rolloutPusherPath(candidate.frames, candidate.count));
     const hasNewGroup = models.groupPaths && models.groupPaths !== lastLoggedGroup;
     const groupPaths = hasNewGroup
       ? models.groupPaths.map((points) => Float32Array.from(points))
@@ -61,11 +64,17 @@ self.onmessage = ({ data }) => {
       representativeReturn: rollout.return,
       trainReturn: progress.trainReturn ?? progress.groupReturnMean ?? null,
       hasValueEstimate: progress.algorithm === "ppo",
+      evaluationPaths,
       groupPaths,
       groupAdvantages,
       ...rollout,
       return: evaluationReturn,
-    }, [rollout.frames.buffer, groupAdvantages.buffer, ...groupPaths.map((path) => path.buffer)]);
+    }, [
+      rollout.frames.buffer,
+      groupAdvantages.buffer,
+      ...evaluationPaths.map((path) => path.buffer),
+      ...groupPaths.map((path) => path.buffer),
+    ]);
   };
 
   self.postMessage({ type: "started", algorithm });

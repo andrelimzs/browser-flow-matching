@@ -16,7 +16,12 @@ import {
   RL_ACTION_SIZE,
   RL_OBSERVATION_SIZE,
 } from "../src/pusht/rl/env.js";
-import { makePPOActor, recordPolicyRollout, simpleMovingAverage } from "../src/pusht/rl/common.js";
+import {
+  makePPOActor,
+  recordPolicyRollout,
+  rolloutPusherPath,
+  simpleMovingAverage,
+} from "../src/pusht/rl/common.js";
 import {
   computeDrGRPOAdvantages,
   DEFAULT_DRGRPO_GROUP_SIZE,
@@ -532,6 +537,11 @@ const recordedRollout = recordPolicyRollout(ppo.actor, new PushTRLEnv({ seed: 22
 console.log(`recorded rollout: ${recordedRollout.count} frames, ${recordedRollout.frames.length} values`);
 if (recordedRollout.frames.length !== recordedRollout.count * 12 || !recordedRollout.frames.every(Number.isFinite)) {
   throw new Error("recorded rollout action distribution has the wrong shape or non-finite values");
+}
+const recordedPath = rolloutPusherPath(recordedRollout.frames, recordedRollout.count);
+if (recordedPath.length !== recordedRollout.count * 2 ||
+    recordedPath[0] !== recordedRollout.frames[0] || recordedPath[1] !== recordedRollout.frames[1]) {
+  throw new Error("recorded rollout pusher path extraction is incorrect");
 }
 if (recordedRollout.squashed) throw new Error("PPO rollout was marked as tanh-squashed");
 let recordedReward = 0;

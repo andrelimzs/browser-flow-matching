@@ -261,6 +261,15 @@ export function simpleMovingAverage(values, windowSize) {
   return averaged;
 }
 
+export function rolloutPusherPath(frames, count, frameSize = 12) {
+  const path = new Float32Array(count * 2);
+  for (let index = 0; index < count; index++) {
+    path[index * 2] = frames[index * frameSize];
+    path[index * 2 + 1] = frames[index * frameSize + 1];
+  }
+  return path;
+}
+
 export function evaluatePolicy(actor, env, episodes = 5) {
   let successes = 0;
   let coverage = 0;

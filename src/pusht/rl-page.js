@@ -2,7 +2,7 @@ import "./style.css";
 import "./rl-style.css";
 import { MAX_PUSHER_SPEED, PushWorld, createRandom } from "./sim.js";
 import { createView } from "./render.js";
-import { simpleMovingAverage } from "./rl/common.js";
+import { rolloutPusherPath, simpleMovingAverage } from "./rl/common.js";
 
 const $ = (selector) => document.querySelector(selector);
 const ROLLOUT_FRAME_SIZE = 12;
@@ -364,9 +364,10 @@ function selectRollout(index) {
     `eval mean ${formatReturn(rollout.return)} · path ${formatReturn(rollout.representativeReturn)}`;
   $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
   $("#rolloutPill").dataset.active = "record";
+  const peerLabel = `${rollout.evaluationPaths.length} faded eval paths`;
   $("#canvasPathLabel").textContent = rollout.groupPaths.length
-    ? `Representative eval path · ${rollout.groupPaths.length} Dr.GRPO paths · blue + / orange − advantage`
-    : "Representative eval path · action μ / 1σ radar";
+    ? `Representative eval path · ${peerLabel} · ${rollout.groupPaths.length} Dr.GRPO paths`
+    : `Representative eval path · ${peerLabel} · action μ / 1σ radar`;
   $("#valueLegendItem").hidden = !rollout.hasValueEstimate;
   $("#valueLegend").textContent = "V(s)";
   $("#valuePlotTitle").textContent = rollout.hasValueEstimate
@@ -378,11 +379,7 @@ function selectRollout(index) {
 
 function addRollout(message) {
   const frames = message.frames;
-  const path = new Float32Array(message.count * 2);
-  for (let index = 0; index < message.count; index += 1) {
-    path[index * 2] = frames[index * ROLLOUT_FRAME_SIZE];
-    path[index * 2 + 1] = frames[index * ROLLOUT_FRAME_SIZE + 1];
-  }
+  const path = rolloutPusherPath(frames, message.count, ROLLOUT_FRAME_SIZE);
   if (message.groupPaths?.length) {
     state.latestGroupPaths = message.groupPaths;
     state.latestGroupAdvantages = message.groupAdvantages;
@@ -401,6 +398,7 @@ function addRollout(message) {
     count: message.count,
     algorithm: message.progress.algorithm,
     hasValueEstimate: message.hasValueEstimate,
+    evaluationPaths: message.evaluationPaths ?? [],
     groupPaths: state.latestGroupPaths,
     groupAdvantages: state.latestGroupAdvantages,
     squashed: message.squashed,
@@ -539,9 +537,16 @@ function draw(timestamp) {
     color: advantagePathColor(rollout.groupAdvantages[index] ?? 0),
     width: 1.35,
   }));
+  const evaluationPaths = rollout.evaluationPaths.map((points) => ({
+    points,
+    cursor: state.frame + 1,
+    color: "rgba(29, 102, 219, .14)",
+    width: 1.1,
+  }));
   view.draw(world, {
     paths: [
       ...groupPaths,
+      ...evaluationPaths,
       { points: rollout.path, cursor: state.frame + 1, color: "rgba(25, 28, 27, .78)", width: 1.9 },
     ],
     coverage: rollout.frames[offset + 5],
