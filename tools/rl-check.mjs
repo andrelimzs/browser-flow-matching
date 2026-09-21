@@ -68,6 +68,14 @@ const noShapingTransition = noShapingEnv.step(normalizedAction(
 if (noShapingTransition.pusherDistanceProgress <= 0 || noShapingTransition.reward !== 0) {
   throw new Error("disabled reward shaping still changed the reward");
 }
+const stationaryShapingEnv = new PushTRLEnv({ seed: 8, curriculum: false });
+stationaryShapingEnv.reset();
+const stationaryTransition = stationaryShapingEnv.step(Float32Array.of(0, 0));
+if (stationaryTransition.distanceShapingReward !== 0 ||
+    stationaryTransition.pusherDistanceShapingReward !== 0 ||
+    stationaryTransition.orientationShapingReward !== 0 || stationaryTransition.reward !== 0) {
+  throw new Error("stationary action earned shaping reward");
+}
 const pusherShapingEnv = new PushTRLEnv({
   seed: 8,
   curriculum: false,
@@ -83,11 +91,24 @@ const pusherShapingTransition = pusherShapingEnv.step(normalizedAction(
   pusherDirectionY / pusherDirectionLength * MAX_PUSHER_SPEED,
 ));
 const expectedPusherShaping = pusherShapingEnv.pusherDistanceRewardScale *
-  (pusherDistanceBefore - pusherShapingEnv.discount * pusherShapingTransition.pusherDistance);
+  (pusherDistanceBefore - pusherShapingTransition.pusherDistance);
 if (Math.abs(pusherShapingTransition.reward - expectedPusherShaping) > 1e-6 ||
     Math.abs(pusherShapingTransition.pusherDistanceProgress *
       pusherShapingEnv.pusherDistanceRewardScale - 0.01) > 1e-6) {
-  throw new Error("pusher reward is not discount-consistent with a 0.01 full-step progress coefficient");
+  throw new Error("pusher reward does not match the 0.01 full-step progress coefficient");
+}
+const awayShapingEnv = new PushTRLEnv({
+  seed: 8,
+  curriculum: false,
+  rewardShaping: { blockDistance: false, orientation: false, closeness: false },
+});
+awayShapingEnv.reset();
+const awayTransition = awayShapingEnv.step(normalizedAction(
+  -pusherDirectionX / pusherDirectionLength * MAX_PUSHER_SPEED,
+  -pusherDirectionY / pusherDirectionLength * MAX_PUSHER_SPEED,
+));
+if (Math.abs(awayTransition.reward + 0.01) > 1e-6) {
+  throw new Error(`full-speed movement away from the goal earned ${awayTransition.reward}`);
 }
 
 // The block starts near the goal, moves to the final task radius by 70%, and
@@ -133,8 +154,8 @@ if (noCurriculumEnv.world.block.x !== FIXED_BLOCK_START.x ||
 }
 console.log("curriculum: randomized bearing and matched pusher gap, near radius at 0%, final radius at 70%");
 
-// Environment contract: every shaping term uses gamma*Phi(next)-Phi(current),
-// and all enabled reward components sum exactly.
+// Environment contract: every shaping term is signed transition progress, and
+// all enabled reward components sum exactly.
 const env = new PushTRLEnv({ seed: 10, horizon: 2200 });
 env.setTrainingProgress(1);
 let observation = env.reset();
@@ -184,8 +205,8 @@ console.log(`orientation progress: ${orientationTransition.orientationProgress.t
 if (Math.abs(orientationTransition.orientationProgress - 0.5) > 1e-6) {
   throw new Error("orientation shaping is not normalized angular progress");
 }
-if (Math.abs(orientationTransition.orientationShapingReward - (1 - orientationEnv.discount * 0.5)) > 1e-6) {
-  throw new Error("orientation shaping does not use the environment discount");
+if (Math.abs(orientationTransition.orientationShapingReward - 0.5) > 1e-6) {
+  throw new Error("orientation shaping does not equal signed angular progress");
 }
 
 const closenessEnv = new PushTRLEnv({ seed: 16, horizon: 1 });

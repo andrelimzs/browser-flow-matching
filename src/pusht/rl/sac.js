@@ -71,7 +71,6 @@ export function trainSAC({
   progressEvery = 5000,
   onProgress = () => {},
 } = {}) {
-  env.discount = gamma;
   const actor = makeActor(RL_OBSERVATION_SIZE, width, batchSize, random);
   const critic1 = makeCritic(RL_OBSERVATION_SIZE, width, batchSize, random);
   const critic2 = makeCritic(RL_OBSERVATION_SIZE, width, batchSize, random);

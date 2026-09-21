@@ -71,7 +71,6 @@ export function trainPPO({
   if (!environments.length) throw new Error("PPO needs at least one environment");
   if (environments.length > batchSize) throw new Error("PPO environment count cannot exceed batch size");
   const environmentCount = environments.length;
-  for (const environment of environments) environment.discount = gamma;
   const actor = makePPOActor(RL_OBSERVATION_SIZE, width, batchSize, random);
   const critic = makeValue(RL_OBSERVATION_SIZE, width, batchSize, random);
   const actorOptimizer = new Adam(actor.params, { learningRate: actorLearningRate, epsilon: 1e-5 });

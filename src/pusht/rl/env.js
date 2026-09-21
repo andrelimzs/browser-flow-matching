@@ -2,8 +2,8 @@
 //
 // Observation: the current normalized simulator observation (no frame stack).
 // Action: dx/dy projected onto the unit disk, then scaled by MAX_PUSHER_SPEED.
-// Reward: discount-consistent potential shaping for block distance, pusher
-// distance, and orientation; optional terminal/closeness and wall components.
+// Reward: signed progress in block distance, pusher distance, and orientation;
+// optional terminal/closeness and wall components.
 
 import {
   FIXED_BLOCK_START,
@@ -58,7 +58,6 @@ export class PushTRLEnv {
   constructor({
     seed = 1,
     horizon = 200,
-    discount = 0.99,
     distanceRewardScale = 1,
     pusherDistanceRewardScale = 0.01 / MAX_PUSHER_SPEED,
     orientationRewardScale = 1,
@@ -68,7 +67,6 @@ export class PushTRLEnv {
     this.random = createRandom(seed);
     this.world = new PushWorld({ random: this.random, obstacleCount: 0 });
     this.horizon = horizon;
-    this.discount = discount;
     this.distanceRewardScale = distanceRewardScale;
     this.pusherDistanceRewardScale = pusherDistanceRewardScale;
     this.orientationRewardScale = orientationRewardScale;
@@ -199,20 +197,17 @@ export class PushTRLEnv {
     const previousDistance = this.distance;
     const distance = this.blockGoalDistance();
     const distanceProgress = previousDistance - distance;
-    const distanceShapingReward = this.distanceRewardScale *
-      (previousDistance - this.discount * distance);
+    const distanceShapingReward = this.distanceRewardScale * distanceProgress;
     this.distance = distance;
     const previousPusherDistance = this.pusherDistance;
     const pusherDistance = this.pusherGoalDistance();
     const pusherDistanceProgress = previousPusherDistance - pusherDistance;
-    const pusherDistanceShapingReward = this.pusherDistanceRewardScale *
-      (previousPusherDistance - this.discount * pusherDistance);
+    const pusherDistanceShapingReward = this.pusherDistanceRewardScale * pusherDistanceProgress;
     this.pusherDistance = pusherDistance;
     const previousOrientationError = this.orientationError;
     const orientationError = this.blockGoalOrientationError();
     const orientationProgress = previousOrientationError - orientationError;
-    const orientationShapingReward = this.orientationRewardScale *
-      (previousOrientationError - this.discount * orientationError);
+    const orientationShapingReward = this.orientationRewardScale * orientationProgress;
     this.orientationError = orientationError;
     const coverage = this.world.coverage();
     const success = coverage >= SUCCESS_COVERAGE;

@@ -37,7 +37,7 @@ const onProgress = (progress) => {
 };
 
 console.log(
-  `${algorithm.toUpperCase()} · single frame (11) · unit-disk action dx/dy (2) · discount-consistent distance/orientation shaping + final closeness and completion; wall penalties off by default\n` +
+  `${algorithm.toUpperCase()} · single frame (11) · unit-disk action dx/dy (2) · signed distance/orientation progress + final closeness and completion; wall penalties off by default\n` +
   `seed ${seed} · horizon ${horizon} · width ${width} · curriculum ${curriculum ? "on" : "off"} · steps ${totalSteps.toLocaleString()}`,
 );
 
@@ -60,7 +60,7 @@ if (process.env.OUT) {
     algorithm,
     observation: "single normalized frame",
     action: "dx,dy projected onto the unit disk and scaled to max pusher speed",
-    reward: "discount-consistent block-goal, pusher-goal, and orientation potential shaping + final overlap closeness + completion; wall penalty components default off",
+    reward: "signed block-goal, pusher-goal, and orientation progress + final overlap closeness + completion; wall penalty components default off",
     seed,
     totalSteps,
     horizon,

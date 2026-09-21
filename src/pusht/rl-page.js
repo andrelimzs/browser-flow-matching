@@ -288,7 +288,7 @@ function selectRollout(index) {
   $("#rolloutPill").dataset.active = "record";
   const valueLabel = rollout.algorithm === "sac" ? "min Q(s,a)" : "V(s)";
   $("#valueLegend").textContent = valueLabel;
-  $("#valuePlotTitle").textContent = `${valueLabel} vs rollout step`;
+  $("#valuePlotTitle").textContent = `Estimated remaining return ${valueLabel}`;
   drawReturnChart();
   drawRolloutValueChart();
 }
