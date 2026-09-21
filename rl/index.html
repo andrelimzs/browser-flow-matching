@@ -48,8 +48,8 @@
 
             <div class="canvas-shell rl-canvas-shell">
               <canvas id="arena" aria-label="Selected reinforcement-learning policy rollout"></canvas>
-              <div class="canvas-label canvas-label-source" id="canvasPathLabel">Path · action μ / 1σ radar</div>
-              <div class="canvas-label canvas-label-target"><span id="rolloutReturnLabel">return —</span></div>
+              <div class="canvas-label canvas-label-source" id="canvasPathLabel">Representative eval path · action μ / 1σ radar</div>
+              <div class="canvas-label canvas-label-target"><span id="rolloutReturnLabel">eval mean — · path —</span></div>
               <div class="rollout-empty" id="rolloutEmpty">
                 <strong>No rollouts logged yet</strong>
                 <span>Start training to capture a deterministic rollout every 200 steps.</span>
@@ -66,9 +66,9 @@
 
             <div class="rollout-summary">
               <div><span>Training step</span><strong id="selectedStep">—</strong></div>
-              <div><span>Episode return</span><strong id="selectedReturn">—</strong></div>
-              <div><span>Final coverage</span><strong id="selectedCoverage">—</strong></div>
-              <div><span>Outcome</span><strong id="selectedOutcome">—</strong></div>
+              <div><span>Eval mean return</span><strong id="selectedReturn">—</strong></div>
+              <div><span>Path coverage</span><strong id="selectedCoverage">—</strong></div>
+              <div><span>Path outcome</span><strong id="selectedOutcome">—</strong></div>
             </div>
 
             <div class="rollout-value-panel">
@@ -97,14 +97,14 @@
 
             <div class="return-panel">
               <div class="return-heading">
-                <div><p class="label">Latest evaluation return</p><strong id="latestReturn">—</strong></div>
+                <div><p class="label">Latest 10-rollout eval mean</p><strong id="latestReturn">—</strong></div>
                 <span>every 200 steps</span>
               </div>
               <div class="plot-legend return-legend" aria-hidden="true">
-                <span><i class="evaluation-return-swatch"></i><b>Deterministic eval</b></span>
-                <span><i class="training-return-swatch"></i><b>Train episode mean</b></span>
+                <span><i class="evaluation-return-swatch"></i><b>Eval mean · SMA 10</b></span>
+                <span><i class="training-return-swatch"></i><b>Train mean · SMA 10</b></span>
               </div>
-              <canvas id="returnCanvas" aria-label="Deterministic evaluation and mean training episode returns over time"></canvas>
+              <canvas id="returnCanvas" aria-label="Ten-point simple moving averages of deterministic evaluation and mean training episode returns"></canvas>
             </div>
 
             <p class="control-label">Algorithm</p>

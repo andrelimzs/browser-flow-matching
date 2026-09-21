@@ -16,7 +16,7 @@ import {
   RL_ACTION_SIZE,
   RL_OBSERVATION_SIZE,
 } from "../src/pusht/rl/env.js";
-import { makePPOActor, recordPolicyRollout } from "../src/pusht/rl/common.js";
+import { makePPOActor, recordPolicyRollout, simpleMovingAverage } from "../src/pusht/rl/common.js";
 import {
   computeDrGRPOAdvantages,
   DEFAULT_DRGRPO_GROUP_SIZE,
@@ -26,6 +26,11 @@ import {
 import { computeGAE, trainPPO } from "../src/pusht/rl/ppo.js";
 
 if (DEFAULT_DRGRPO_GROUP_SIZE !== 32) throw new Error("Dr.GRPO group size default is not 32");
+const smoothedReturns = simpleMovingAverage([1, 3, null, 5, 7], 3);
+const expectedSmoothedReturns = [1, 2, 2, 4, 6];
+if (smoothedReturns.some((value, index) => Math.abs(value - expectedSmoothedReturns[index]) > 1e-9)) {
+  throw new Error(`return SMA mismatch: ${smoothedReturns}`);
+}
 const finiteModel = (model) => model.params.every((buffer) => buffer.every(Number.isFinite));
 const initializedActor = makePPOActor(RL_OBSERVATION_SIZE, 16, 1, createRandom(19));
 const outputWeights = initializedActor.mean.weights.at(-1);

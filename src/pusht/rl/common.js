@@ -240,6 +240,27 @@ export function shuffle(values, random) {
   }
 }
 
+export function simpleMovingAverage(values, windowSize) {
+  const size = Math.max(1, Math.floor(windowSize));
+  const averaged = new Array(values.length).fill(null);
+  let sum = 0;
+  let count = 0;
+  for (let index = 0; index < values.length; index++) {
+    const value = values[index];
+    if (Number.isFinite(value)) {
+      sum += value;
+      count += 1;
+    }
+    const expired = values[index - size];
+    if (Number.isFinite(expired)) {
+      sum -= expired;
+      count -= 1;
+    }
+    if (count > 0) averaged[index] = sum / count;
+  }
+  return averaged;
+}
+
 export function evaluatePolicy(actor, env, episodes = 5) {
   let successes = 0;
   let coverage = 0;

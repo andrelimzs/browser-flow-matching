@@ -4,6 +4,8 @@ import { recordPolicyRollout } from "./rl/common.js";
 import { DEFAULT_DRGRPO_GROUP_SIZE, trainDrGRPO } from "./rl/grpo.js";
 import { trainPPO } from "./rl/ppo.js";
 
+const EVALUATION_ROLLOUTS = 10;
+
 self.onmessage = ({ data }) => {
   if (data.type !== "start") return;
 
@@ -13,25 +15,36 @@ self.onmessage = ({ data }) => {
   let lastLoggedGroup = null;
 
   const logRollout = (progress, models) => {
-    const evaluationEnv = new PushTRLEnv({
-      seed: seed + 10_000,
-      horizon,
-      curriculum,
-      rewardShaping,
-      rewardWeights,
-    });
-    evaluationEnv.setTrainingProgress(progress.steps / totalSteps);
     const estimateValue = progress.algorithm === "ppo"
       ? (observation) => {
           models.critic.inputBuffer().set(observation, 0);
           return models.critic.forward(1)[0];
         }
       : () => 0;
-    const rollout = recordPolicyRollout(models.actor, evaluationEnv, {
-      random: createRandom(seed + 30_000),
-      deterministic: true,
-      estimateValue,
-    });
+    const evaluationRollouts = [];
+    let evaluationReturn = 0;
+    for (let episode = 0; episode < EVALUATION_ROLLOUTS; episode++) {
+      const evaluationEnv = new PushTRLEnv({
+        seed: seed + 10_000 + episode,
+        horizon,
+        curriculum,
+        rewardShaping,
+        rewardWeights,
+      });
+      evaluationEnv.setTrainingProgress(progress.steps / totalSteps);
+      const rollout = recordPolicyRollout(models.actor, evaluationEnv, {
+        random: createRandom(seed + 30_000 + episode),
+        deterministic: true,
+        estimateValue,
+      });
+      evaluationRollouts.push(rollout);
+      evaluationReturn += rollout.return;
+    }
+    evaluationReturn /= EVALUATION_ROLLOUTS;
+    const rollout = evaluationRollouts.reduce((closest, candidate) =>
+      Math.abs(candidate.return - evaluationReturn) < Math.abs(closest.return - evaluationReturn)
+        ? candidate
+        : closest);
     const hasNewGroup = models.groupPaths && models.groupPaths !== lastLoggedGroup;
     const groupPaths = hasNewGroup
       ? models.groupPaths.map((points) => Float32Array.from(points))
@@ -44,11 +57,14 @@ self.onmessage = ({ data }) => {
       type: "rollout",
       progress,
       step: progress.steps,
+      evaluationRollouts: EVALUATION_ROLLOUTS,
+      representativeReturn: rollout.return,
       trainReturn: progress.trainReturn ?? progress.groupReturnMean ?? null,
       hasValueEstimate: progress.algorithm === "ppo",
       groupPaths,
       groupAdvantages,
       ...rollout,
+      return: evaluationReturn,
     }, [rollout.frames.buffer, groupAdvantages.buffer, ...groupPaths.map((path) => path.buffer)]);
   };
 

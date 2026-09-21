@@ -2,11 +2,13 @@ import "./style.css";
 import "./rl-style.css";
 import { MAX_PUSHER_SPEED, PushWorld, createRandom } from "./sim.js";
 import { createView } from "./render.js";
+import { simpleMovingAverage } from "./rl/common.js";
 
 const $ = (selector) => document.querySelector(selector);
 const ROLLOUT_FRAME_SIZE = 12;
 const BUDGET_MIN = 10_000;
 const BUDGET_MAX = 1_000_000;
+const RETURN_SMA_WINDOW = 10;
 const REWARD_COMPONENTS = [
   "completion",
   "blockDistance",
@@ -170,8 +172,9 @@ function drawReturnChart() {
   const padding = { left: 10, right: 10, top: 12, bottom: 14 };
   const values = state.rollouts.map((rollout) => rollout.return);
   const trainValues = state.rollouts.map((rollout) => rollout.trainReturn);
-  const finiteTrainValues = trainValues.filter(Number.isFinite);
-  const chartValues = [...values, ...finiteTrainValues];
+  const evaluationSma = simpleMovingAverage(values, RETURN_SMA_WINDOW);
+  const trainingSma = simpleMovingAverage(trainValues, RETURN_SMA_WINDOW);
+  const chartValues = [...evaluationSma, ...trainingSma].filter(Number.isFinite);
   let minimum = Math.min(...chartValues);
   let maximum = Math.max(...chartValues);
   if (minimum === maximum) {
@@ -182,7 +185,7 @@ function drawReturnChart() {
   const y = (value) => padding.top + (maximum - value) / (maximum - minimum) * (rect.height - padding.top - padding.bottom);
 
   context.beginPath();
-  values.forEach((value, index) => {
+  evaluationSma.forEach((value, index) => {
     if (index === 0) context.moveTo(x(index), y(value));
     else context.lineTo(x(index), y(value));
   });
@@ -192,7 +195,7 @@ function drawReturnChart() {
 
   context.beginPath();
   let trainSegmentStarted = false;
-  trainValues.forEach((value, index) => {
+  trainingSma.forEach((value, index) => {
     if (!Number.isFinite(value)) {
       trainSegmentStarted = false;
       return;
@@ -211,12 +214,12 @@ function drawReturnChart() {
   if (state.selected >= 0) {
     const selected = state.rollouts[state.selected];
     context.beginPath();
-    context.arc(x(state.selected), y(selected.return), 4, 0, Math.PI * 2);
+    context.arc(x(state.selected), y(evaluationSma[state.selected]), 4, 0, Math.PI * 2);
     context.fillStyle = "#ed6b55";
     context.fill();
-    if (Number.isFinite(selected.trainReturn)) {
+    if (Number.isFinite(trainingSma[state.selected])) {
       context.beginPath();
-      context.arc(x(state.selected), y(selected.trainReturn), 3, 0, Math.PI * 2);
+      context.arc(x(state.selected), y(trainingSma[state.selected]), 3, 0, Math.PI * 2);
       context.fillStyle = "#d06a3e";
       context.fill();
     }
@@ -357,12 +360,13 @@ function selectRollout(index) {
         : rollout.stalled
           ? "No movement"
           : "Timed out";
-  $("#rolloutReturnLabel").textContent = `return ${formatReturn(rollout.return)}`;
+  $("#rolloutReturnLabel").textContent =
+    `eval mean ${formatReturn(rollout.return)} · path ${formatReturn(rollout.representativeReturn)}`;
   $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
   $("#rolloutPill").dataset.active = "record";
   $("#canvasPathLabel").textContent = rollout.groupPaths.length
-    ? `Evaluation path · ${rollout.groupPaths.length} Dr.GRPO paths · blue + / orange − advantage`
-    : "Path · action μ / 1σ radar";
+    ? `Representative eval path · ${rollout.groupPaths.length} Dr.GRPO paths · blue + / orange − advantage`
+    : "Representative eval path · action μ / 1σ radar";
   $("#valueLegendItem").hidden = !rollout.hasValueEstimate;
   $("#valueLegend").textContent = "V(s)";
   $("#valuePlotTitle").textContent = rollout.hasValueEstimate
@@ -386,6 +390,8 @@ function addRollout(message) {
   state.rollouts.push({
     step: message.step,
     return: message.return,
+    representativeReturn: message.representativeReturn,
+    evaluationRollouts: message.evaluationRollouts,
     trainReturn: Number.isFinite(message.trainReturn) ? message.trainReturn : null,
     success: message.success,
     wallContact: message.wallContact,
@@ -435,8 +441,8 @@ function resetRun() {
   $("#selectedReturn").textContent = "—";
   $("#selectedCoverage").textContent = "—";
   $("#selectedOutcome").textContent = "—";
-  $("#rolloutReturnLabel").textContent = "return —";
-  $("#canvasPathLabel").textContent = "Path · action μ / 1σ radar";
+  $("#rolloutReturnLabel").textContent = "eval mean — · path —";
+  $("#canvasPathLabel").textContent = "Representative eval path · action μ / 1σ radar";
   $("#valueLegendItem").hidden = false;
   $("#valueLegend").textContent = "V(s)";
   $("#valuePlotTitle").textContent = "Estimated remaining return V(s)";
