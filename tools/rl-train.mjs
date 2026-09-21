@@ -36,7 +36,7 @@ const onProgress = (progress) => {
 };
 
 console.log(
-  `${algorithm.toUpperCase()} · single frame (11) · action dx/dy (2) · reward position/orientation progress, completion +1, wall -1\n` +
+  `${algorithm.toUpperCase()} · single frame (11) · action dx/dy (2) · reward progress + final closeness, completion +1, wall -1\n` +
   `seed ${seed} · horizon ${horizon} · width ${width} · steps ${totalSteps.toLocaleString()}`,
 );
 
@@ -58,7 +58,7 @@ if (process.env.OUT) {
     algorithm,
     observation: "single normalized frame",
     action: "normalized dx,dy",
-    reward: "block-goal position and orientation progress + completion; wall contact -1 and terminal",
+    reward: "block-goal position/orientation progress + final overlap closeness + completion; wall contact -1 and terminal",
     seed,
     totalSteps,
     horizon,

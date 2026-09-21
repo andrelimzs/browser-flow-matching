@@ -240,6 +240,63 @@ export function createView(canvas) {
       context.stroke();
     }
 
+    // State-dependent action distribution for RL rollouts. The translucent
+    // shape is the tanh-squashed one-standard-deviation contour in pre-squash
+    // Gaussian space; the spoke shows the deterministic mean action.
+    if (options.actionDistribution) {
+      const { meanX, meanY, logStdX, logStdY } = options.actionDistribution;
+      const centerX = toX(world.pusher.x);
+      const centerY = toY(world.pusher.y);
+      const radarRadius = toLength(0.085);
+      const stdX = Math.exp(logStdX);
+      const stdY = Math.exp(logStdY);
+
+      context.save();
+      context.strokeStyle = "rgba(29, 102, 219, .18)";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.arc(centerX, centerY, radarRadius, 0, Math.PI * 2);
+      context.moveTo(centerX - radarRadius, centerY);
+      context.lineTo(centerX + radarRadius, centerY);
+      context.moveTo(centerX, centerY - radarRadius);
+      context.lineTo(centerX, centerY + radarRadius);
+      context.stroke();
+
+      context.beginPath();
+      const points = 48;
+      for (let index = 0; index <= points; index++) {
+        const angle = index / points * Math.PI * 2;
+        const actionX = Math.tanh(meanX + stdX * Math.cos(angle));
+        const actionY = Math.tanh(meanY + stdY * Math.sin(angle));
+        const x = centerX + actionX * radarRadius;
+        const y = centerY - actionY * radarRadius;
+        if (index === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      context.closePath();
+      context.fillStyle = "rgba(29, 102, 219, .13)";
+      context.fill();
+      context.strokeStyle = "rgba(29, 102, 219, .55)";
+      context.lineWidth = 1.2;
+      context.stroke();
+
+      const actionMeanX = Math.tanh(meanX);
+      const actionMeanY = Math.tanh(meanY);
+      const meanPointX = centerX + actionMeanX * radarRadius;
+      const meanPointY = centerY - actionMeanY * radarRadius;
+      context.beginPath();
+      context.moveTo(centerX, centerY);
+      context.lineTo(meanPointX, meanPointY);
+      context.strokeStyle = "rgba(29, 102, 219, .8)";
+      context.lineWidth = 1.5;
+      context.stroke();
+      context.beginPath();
+      context.arc(meanPointX, meanPointY, 2.8, 0, Math.PI * 2);
+      context.fillStyle = "rgba(29, 102, 219, .88)";
+      context.fill();
+      context.restore();
+    }
+
     // Block
     const block = teeOutline(world.block);
     polygon(block);

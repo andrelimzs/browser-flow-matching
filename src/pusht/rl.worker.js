@@ -29,7 +29,7 @@ self.onmessage = ({ data }) => {
         env,
         totalSteps,
         width,
-        progressEvery: 100,
+        progressEvery: 200,
         random,
         onProgress,
       });
@@ -38,7 +38,7 @@ self.onmessage = ({ data }) => {
         env,
         totalSteps,
         width,
-        rolloutSteps: 100,
+        rolloutSteps: 200,
         random,
         onProgress,
       });

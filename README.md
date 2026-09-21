@@ -98,13 +98,14 @@ Gaussian actor. Both deliberately use the same minimal task definition:
 
 - observation: one normalized 11-value simulator frame, with no history or frame stack
 - action: normalized `dx, dy` in `[-1, 1]`, scaled to one `0.017` pusher step
-- reward: progress in block-to-goal center distance plus progress in normalized orientation error, `+1` on completion, or `-1` and termination when the pusher touches the outer wall
+- reward: progress in block-to-goal center distance plus progress in normalized orientation error, final overlap coverage as a terminal closeness score, `+1` on completion, or `-1` and termination when the pusher touches the outer wall
 - episode horizon: 600 steps by default
 
 Training is seeded and runs in Node. Set `OUT=policy.json` to save the actor and its evaluation metadata.
 Position and orientation progress earn positive reward, regress earns the matching negative reward, and
 waiting earns zero. Orientation error is divided by π, bounding its net shaping range to `[-1, 1]`.
-Completion counts remain explicit in the CLI output.
+At success or timeout, the final shape-overlap coverage is added as a closeness reward. Completion counts
+remain explicit in the CLI output.
 
 ## Multimodality
 

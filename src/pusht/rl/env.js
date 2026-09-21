@@ -2,7 +2,8 @@
 //
 // Observation: the current normalized simulator observation (no frame stack).
 // Action: normalized dx/dy in [-1, 1], scaled to one maximum pusher step.
-// Reward: progress in block position and orientation, +1 on completion, or -1 on wall contact.
+// Reward: progress in block position and orientation, final overlap closeness,
+// +1 on completion, or -1 on wall contact.
 
 import {
   PushWorld,
@@ -76,20 +77,23 @@ export class PushTRLEnv {
     const orientationError = this.blockGoalOrientationError();
     const orientationProgress = this.orientationError - orientationError;
     this.orientationError = orientationError;
-    const success = this.world.coverage() >= SUCCESS_COVERAGE;
+    const coverage = this.world.coverage();
+    const success = coverage >= SUCCESS_COVERAGE;
     const wallContact = !success && this.pusherTouchesWall();
     const completionReward = success ? 1 : 0;
     const wallPenalty = wallContact ? -1 : 0;
-    const reward = wallContact ? wallPenalty : completionReward +
-      this.distanceRewardScale * distanceProgress +
-      this.orientationRewardScale * orientationProgress;
     const truncated = !success && !wallContact && this.episodeSteps >= this.horizon;
     const done = success || wallContact || truncated;
+    const finalClosenessReward = done && !wallContact ? coverage : 0;
+    const reward = wallContact ? wallPenalty : completionReward + finalClosenessReward +
+      this.distanceRewardScale * distanceProgress +
+      this.orientationRewardScale * orientationProgress;
     this.episodeReturn += reward;
     return {
       observation: this.observe(),
       reward,
       completionReward,
+      finalClosenessReward,
       wallPenalty,
       distanceProgress,
       distance,
@@ -99,7 +103,7 @@ export class PushTRLEnv {
       success,
       wallContact,
       truncated,
-      coverage: this.world.coverage(),
+      coverage,
     };
   }
 }

@@ -126,7 +126,7 @@ export function evaluatePolicy(actor, env, episodes = 5) {
 }
 
 export function recordPolicyRollout(actor, env) {
-  const valuesPerFrame = 6;
+  const valuesPerFrame = 10;
   const frames = new Float32Array((env.horizon + 1) * valuesPerFrame);
   const action = new Float32Array(2);
   let observation = env.reset();
@@ -136,7 +136,7 @@ export function recordPolicyRollout(actor, env) {
   let wallContact = false;
   let coverage = env.world.coverage();
 
-  const recordFrame = () => {
+  const recordFrame = (sample) => {
     const offset = count * valuesPerFrame;
     frames[offset] = env.world.pusher.x;
     frames[offset + 1] = env.world.pusher.y;
@@ -144,14 +144,18 @@ export function recordPolicyRollout(actor, env) {
     frames[offset + 3] = env.world.block.y;
     frames[offset + 4] = env.world.block.angle;
     frames[offset + 5] = coverage;
+    frames[offset + 6] = sample.meanX;
+    frames[offset + 7] = sample.meanY;
+    frames[offset + 8] = sample.logStdX;
+    frames[offset + 9] = sample.logStdY;
     count += 1;
   };
 
-  recordFrame();
   for (;;) {
     actor.inputBuffer().set(observation, 0);
     const output = actor.forward(1);
     const sample = actorSample(output, 0, Math.random, true);
+    recordFrame(sample);
     action[0] = sample.actionX;
     action[1] = sample.actionY;
     const transition = env.step(action);
@@ -160,8 +164,11 @@ export function recordPolicyRollout(actor, env) {
     coverage = transition.coverage;
     success = transition.success;
     wallContact = transition.wallContact;
-    recordFrame();
-    if (transition.done) break;
+    if (transition.done) {
+      actor.inputBuffer().set(observation, 0);
+      recordFrame(actorSample(actor.forward(1), 0, Math.random, true));
+      break;
+    }
   }
 
   return {

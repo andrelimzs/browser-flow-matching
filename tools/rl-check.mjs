@@ -2,6 +2,7 @@ import { MLP } from "../src/flow/mlp.js";
 import { createRandom, MAX_PUSHER_SPEED } from "../src/pusht/sim.js";
 import { ScriptedExpert } from "../src/pusht/expert.js";
 import { PushTRLEnv, RL_ACTION_SIZE, RL_OBSERVATION_SIZE } from "../src/pusht/rl/env.js";
+import { recordPolicyRollout } from "../src/pusht/rl/common.js";
 import { trainPPO } from "../src/pusht/rl/ppo.js";
 import { trainSAC } from "../src/pusht/rl/sac.js";
 
@@ -19,6 +20,7 @@ const action = new Float32Array(2);
 let completionRewards = 0;
 let distanceReward = 0;
 let orientationReward = 0;
+let finalClosenessReward = 0;
 let totalReward = 0;
 let solved = false;
 for (let step = 0; step < 2200; step++) {
@@ -30,6 +32,7 @@ for (let step = 0; step < 2200; step++) {
   completionRewards += transition.completionReward;
   distanceReward += transition.distanceProgress;
   orientationReward += transition.orientationProgress;
+  finalClosenessReward += transition.finalClosenessReward;
   totalReward += transition.reward;
   if (transition.done) { solved = transition.success; break; }
 }
@@ -38,12 +41,13 @@ const expectedOrientationReward = initialOrientationError - env.orientationError
 console.log(
   `environment: obs ${observation.length}, action ${RL_ACTION_SIZE}, solved ${solved}, ` +
   `completion ${completionRewards}, distance reward ${distanceReward.toFixed(4)}, ` +
-  `orientation reward ${orientationReward.toFixed(4)}, total ${totalReward.toFixed(4)}`,
+  `orientation reward ${orientationReward.toFixed(4)}, closeness ${finalClosenessReward.toFixed(4)}, ` +
+  `total ${totalReward.toFixed(4)}`,
 );
 if (!solved || completionRewards !== 1) throw new Error("completion reward is wrong");
 if (Math.abs(distanceReward - expectedDistanceReward) > 1e-6) throw new Error("distance shaping does not telescope");
 if (Math.abs(orientationReward - expectedOrientationReward) > 1e-6) throw new Error("orientation shaping does not telescope");
-if (Math.abs(totalReward - (1 + expectedDistanceReward + expectedOrientationReward)) > 1e-6) {
+if (Math.abs(totalReward - (1 + finalClosenessReward + expectedDistanceReward + expectedOrientationReward)) > 1e-6) {
   throw new Error("combined reward is wrong");
 }
 
@@ -56,6 +60,24 @@ const orientationTransition = orientationEnv.step(Float32Array.of(0, 0));
 console.log(`orientation progress: ${orientationTransition.orientationProgress.toFixed(4)}`);
 if (Math.abs(orientationTransition.orientationProgress - 0.5) > 1e-6) {
   throw new Error("orientation shaping is not normalized angular progress");
+}
+
+const closenessEnv = new PushTRLEnv({ seed: 16, horizon: 1 });
+closenessEnv.reset();
+closenessEnv.world.block.x = closenessEnv.world.goal.x + 0.015;
+closenessEnv.world.block.y = closenessEnv.world.goal.y;
+closenessEnv.world.block.angle = closenessEnv.world.goal.angle;
+closenessEnv.distance = closenessEnv.blockGoalDistance();
+closenessEnv.orientationError = closenessEnv.blockGoalOrientationError();
+const closenessTransition = closenessEnv.step(Float32Array.of(0, 0));
+console.log(
+  `terminal closeness: coverage ${closenessTransition.coverage.toFixed(4)}, reward ${closenessTransition.reward.toFixed(4)}`,
+);
+if (!closenessTransition.truncated || closenessTransition.success || closenessTransition.wallContact) {
+  throw new Error("closeness test did not terminate by horizon");
+}
+if (Math.abs(closenessTransition.finalClosenessReward - closenessTransition.coverage) > 1e-6) {
+  throw new Error("terminal closeness reward does not equal final coverage");
 }
 
 // Touching any outer wall is an immediate terminal failure with an exact -1
@@ -113,6 +135,11 @@ const ppo = trainPPO({
 });
 console.log(`PPO smoke: ${ppo.steps} steps, finite ${finiteModel(ppo.actor) && finiteModel(ppo.critic)}`);
 if (!finiteModel(ppo.actor) || !finiteModel(ppo.critic)) throw new Error("PPO produced non-finite parameters");
+const recordedRollout = recordPolicyRollout(ppo.actor, new PushTRLEnv({ seed: 22, horizon: 80 }));
+console.log(`recorded rollout: ${recordedRollout.count} frames, ${recordedRollout.frames.length} values`);
+if (recordedRollout.frames.length !== recordedRollout.count * 10 || !recordedRollout.frames.every(Number.isFinite)) {
+  throw new Error("recorded rollout action distribution has the wrong shape or non-finite values");
+}
 
 const sac = trainSAC({
   env: new PushTRLEnv({ seed: 30, horizon: 80 }),

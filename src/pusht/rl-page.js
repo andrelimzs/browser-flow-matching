@@ -5,6 +5,7 @@ import { createView } from "./render.js";
 
 const $ = (selector) => document.querySelector(selector);
 const budgets = [10_000, 50_000, 100_000];
+const ROLLOUT_FRAME_SIZE = 10;
 const world = new PushWorld({ random: createRandom(41), obstacleCount: 0 });
 const view = createView($("#arena"));
 const state = {
@@ -125,8 +126,8 @@ function addRollout(message) {
   const frames = message.frames;
   const path = new Float32Array(message.count * 2);
   for (let index = 0; index < message.count; index += 1) {
-    path[index * 2] = frames[index * 6];
-    path[index * 2 + 1] = frames[index * 6 + 1];
+    path[index * 2] = frames[index * ROLLOUT_FRAME_SIZE];
+    path[index * 2 + 1] = frames[index * ROLLOUT_FRAME_SIZE + 1];
   }
   state.rollouts.push({
     step: message.step,
@@ -247,7 +248,7 @@ function draw(timestamp) {
     }
     state.lastFrameAt = timestamp;
   }
-  const offset = state.frame * 6;
+  const offset = state.frame * ROLLOUT_FRAME_SIZE;
   world.pusher.x = rollout.frames[offset];
   world.pusher.y = rollout.frames[offset + 1];
   world.block.x = rollout.frames[offset + 2];
@@ -256,6 +257,12 @@ function draw(timestamp) {
   view.draw(world, {
     paths: [{ points: rollout.path, cursor: state.frame + 1, color: "rgba(237, 107, 85, .72)", width: 1.8 }],
     coverage: rollout.frames[offset + 5],
+    actionDistribution: {
+      meanX: rollout.frames[offset + 6],
+      meanY: rollout.frames[offset + 7],
+      logStdX: rollout.frames[offset + 8],
+      logStdY: rollout.frames[offset + 9],
+    },
   });
   requestAnimationFrame(draw);
 }
