@@ -18,7 +18,6 @@ const state = {
   rollouts: [],
   selected: -1,
   pendingLatest: -1,
-  autoFollow: true,
   frame: 0,
   lastFrameAt: 0,
 };
@@ -103,11 +102,10 @@ function drawReturnChart() {
   }
 }
 
-function selectRollout(index, { autoFollow = false } = {}) {
+function selectRollout(index) {
   if (!state.rollouts.length) return;
   state.selected = Math.max(0, Math.min(state.rollouts.length - 1, index));
-  state.autoFollow = autoFollow;
-  state.pendingLatest = -1;
+  state.pendingLatest = state.selected < state.rollouts.length - 1 ? state.rollouts.length - 1 : -1;
   state.frame = 0;
   state.lastFrameAt = 0;
   const rollout = state.rollouts[state.selected];
@@ -148,18 +146,17 @@ function addRollout(message) {
   $("#successMetric").textContent = message.progress.successes.toLocaleString();
   $("#rolloutMetric").textContent = state.rollouts.length.toLocaleString();
   $("#latestReturn").textContent = formatReturn(message.return);
-  if (state.selected < 0) selectRollout(0, { autoFollow: true });
-  else if (state.autoFollow) {
+  if (state.selected < 0) selectRollout(0);
+  else {
     state.pendingLatest = state.rollouts.length - 1;
     drawReturnChart();
-  } else drawReturnChart();
+  }
 }
 
 function resetRun() {
   state.rollouts = [];
   state.selected = -1;
   state.pendingLatest = -1;
-  state.autoFollow = true;
   state.frame = 0;
   const slider = $("#rolloutSlider");
   slider.disabled = true;
@@ -237,8 +234,8 @@ function draw(timestamp) {
   if (!state.lastFrameAt) state.lastFrameAt = timestamp;
   if (timestamp - state.lastFrameAt >= 33) {
     if (state.frame >= rollout.count - 1) {
-      if (state.autoFollow && state.pendingLatest > state.selected) {
-        selectRollout(state.pendingLatest, { autoFollow: true });
+      if (state.pendingLatest > state.selected) {
+        selectRollout(state.pendingLatest);
         requestAnimationFrame(draw);
         return;
       } else {
@@ -383,7 +380,7 @@ $("#horizonSlider").addEventListener("input", (event) => {
   $("#horizonOutput").textContent = state.horizon.toLocaleString();
 });
 $("#rolloutSlider").addEventListener("input", (event) => {
-  selectRollout(Number(event.target.value), { autoFollow: false });
+  selectRollout(Number(event.target.value));
 });
 $("#startButton").addEventListener("click", startTraining);
 $("#stopButton").addEventListener("click", () => stopTraining());
