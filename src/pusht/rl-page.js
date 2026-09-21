@@ -7,6 +7,7 @@ const $ = (selector) => document.querySelector(selector);
 const ROLLOUT_FRAME_SIZE = 10;
 const BUDGET_MIN = 10_000;
 const BUDGET_MAX = 1_000_000;
+const REWARD_SHAPING_TERMS = ["blockDistance", "pusherDistance", "orientation", "closeness"];
 const entropyConfigs = {
   ppo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
   sac: { label: "Temperature α", min: 0, max: 0.5, step: 0.01, digits: 2 },
@@ -18,6 +19,12 @@ const state = {
   budget: 100_000,
   horizon: 200,
   curriculum: true,
+  rewardShaping: {
+    blockDistance: true,
+    pusherDistance: true,
+    orientation: true,
+    closeness: true,
+  },
   entropyByAlgorithm: { ppo: 0.02, sac: 0.3 },
   widthByAlgorithm: { ppo: 64, sac: 256 },
   seed: 2026,
@@ -43,7 +50,7 @@ function setTraining(active, label = active ? "Training" : "Idle") {
   $("#horizonSlider").disabled = active;
   $("#entropySlider").disabled = active;
   $("#curriculumToggle").disabled = active;
-  document.querySelectorAll("[data-algorithm], [data-width]").forEach((button) => {
+  document.querySelectorAll("[data-algorithm], [data-width], [data-reward-shaping]").forEach((button) => {
     button.disabled = active;
   });
   $("#trainingPill").dataset.active = active ? "true" : "false";
@@ -264,6 +271,7 @@ function startTraining() {
     horizon: state.horizon,
     entropyBonus: state.entropyByAlgorithm[state.algorithm],
     curriculum: state.curriculum,
+    rewardShaping: { ...state.rewardShaping },
     seed: state.seed,
   });
 }
@@ -333,8 +341,19 @@ function registerWebMcpTools() {
         width: { type: "integer", enum: [64, 128, 256] },
         entropyBonus: { type: "number", minimum: 0, maximum: 0.5 },
         curriculum: { type: "boolean" },
+        rewardShaping: {
+          type: "object",
+          properties: {
+            blockDistance: { type: "boolean" },
+            pusherDistance: { type: "boolean" },
+            orientation: { type: "boolean" },
+            closeness: { type: "boolean" },
+          },
+          required: ["blockDistance", "pusherDistance", "orientation", "closeness"],
+          additionalProperties: false,
+        },
       },
-      required: ["algorithm", "budget", "horizon", "width", "entropyBonus", "curriculum"],
+      required: ["algorithm", "budget", "horizon", "width", "entropyBonus", "curriculum", "rewardShaping"],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, untrustedContentHint: false },
@@ -353,6 +372,11 @@ function registerWebMcpTools() {
         input.entropyBonus < entropyConfig.min || input.entropyBonus > entropyConfig.max) {
         throw new RangeError(`Entropy must be from ${entropyConfig.min} through ${entropyConfig.max} for ${input.algorithm}.`);
       }
+      if (!input.rewardShaping || REWARD_SHAPING_TERMS.some(
+        (term) => typeof input.rewardShaping[term] !== "boolean",
+      )) {
+        throw new TypeError("Every reward-shaping toggle must be true or false.");
+      }
       if (state.training) throw new Error("A training run is already active.");
 
       state.algorithm = input.algorithm;
@@ -361,6 +385,7 @@ function registerWebMcpTools() {
       state.widthByAlgorithm[state.algorithm] = input.width;
       state.entropyByAlgorithm[state.algorithm] = input.entropyBonus;
       state.curriculum = input.curriculum;
+      state.rewardShaping = { ...input.rewardShaping };
       document.querySelectorAll("[data-algorithm]").forEach((button) => {
         button.setAttribute("aria-pressed", String(button.dataset.algorithm === state.algorithm));
       });
@@ -371,12 +396,14 @@ function registerWebMcpTools() {
       $("#horizonOutput").textContent = state.horizon.toLocaleString();
       updateEntropyControl();
       updateCurriculumControl();
+      updateRewardShapingControls();
       startTraining();
       return {
         status: "training",
         algorithm: state.algorithm,
         budget: state.budget,
         curriculum: state.curriculum,
+        rewardShaping: { ...state.rewardShaping },
       };
     },
   });
@@ -397,6 +424,7 @@ function registerWebMcpTools() {
         width: state.widthByAlgorithm[state.algorithm],
         entropyBonus: state.entropyByAlgorithm[state.algorithm],
         curriculum: state.curriculum,
+        rewardShaping: { ...state.rewardShaping },
         loggedRollouts: state.rollouts.length,
         latestStep: state.rollouts.at(-1)?.step ?? 0,
         selectedRollout: selected ? {
@@ -449,9 +477,23 @@ function updateCurriculumControl() {
   button.textContent = state.curriculum ? "Enabled" : "Disabled";
 }
 
+function updateRewardShapingControls() {
+  document.querySelectorAll("[data-reward-shaping]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(state.rewardShaping[button.dataset.rewardShaping]));
+  });
+}
+
 $("#curriculumToggle").addEventListener("click", () => {
   state.curriculum = !state.curriculum;
   updateCurriculumControl();
+});
+
+document.querySelectorAll("[data-reward-shaping]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const term = button.dataset.rewardShaping;
+    state.rewardShaping[term] = !state.rewardShaping[term];
+    updateRewardShapingControls();
+  });
 });
 
 $("#budgetSlider").addEventListener("input", (event) => {
@@ -482,5 +524,6 @@ window.addEventListener("beforeunload", () => {
 updateEntropyControl();
 updateWidthControl();
 updateCurriculumControl();
+updateRewardShapingControls();
 resetRun();
 requestAnimationFrame(draw);

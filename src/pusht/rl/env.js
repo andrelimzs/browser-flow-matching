@@ -50,6 +50,7 @@ export class PushTRLEnv {
     distanceRewardScale = 1,
     pusherDistanceRewardScale = distanceRewardScale * 0.1,
     orientationRewardScale = 1,
+    rewardShaping = {},
     curriculum = true,
   } = {}) {
     this.random = createRandom(seed);
@@ -58,6 +59,12 @@ export class PushTRLEnv {
     this.distanceRewardScale = distanceRewardScale;
     this.pusherDistanceRewardScale = pusherDistanceRewardScale;
     this.orientationRewardScale = orientationRewardScale;
+    this.rewardShaping = {
+      blockDistance: rewardShaping.blockDistance ?? true,
+      pusherDistance: rewardShaping.pusherDistance ?? true,
+      orientation: rewardShaping.orientation ?? true,
+      closeness: rewardShaping.closeness ?? true,
+    };
     this.curriculum = curriculum;
     this.trainingProgress = 0;
     this.observation = new Float32Array(RL_OBSERVATION_SIZE);
@@ -174,11 +181,11 @@ export class PushTRLEnv {
     const wallPenalty = wallContact ? -1 : 0;
     const truncated = !success && !wallContact && this.episodeSteps >= this.horizon;
     const done = success || wallContact || truncated;
-    const finalClosenessReward = done && !wallContact ? coverage : 0;
+    const finalClosenessReward = done && !wallContact && this.rewardShaping.closeness ? coverage : 0;
     const reward = completionReward + finalClosenessReward + wallPenalty +
-      this.distanceRewardScale * distanceProgress +
-      this.pusherDistanceRewardScale * pusherDistanceProgress +
-      this.orientationRewardScale * orientationProgress;
+      (this.rewardShaping.blockDistance ? this.distanceRewardScale * distanceProgress : 0) +
+      (this.rewardShaping.pusherDistance ? this.pusherDistanceRewardScale * pusherDistanceProgress : 0) +
+      (this.rewardShaping.orientation ? this.orientationRewardScale * orientationProgress : 0);
     this.episodeReturn += reward;
     return {
       observation: this.observe(),

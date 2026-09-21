@@ -21,6 +21,27 @@ const scaledRewardEnv = new PushTRLEnv({ distanceRewardScale: 3 });
 if (Math.abs(scaledRewardEnv.pusherDistanceRewardScale - 0.3) > 1e-12) {
   throw new Error("pusher shaping is not 0.1x the block-distance weight");
 }
+const noShapingEnv = new PushTRLEnv({
+  seed: 8,
+  curriculum: false,
+  rewardShaping: {
+    blockDistance: false,
+    pusherDistance: false,
+    orientation: false,
+    closeness: false,
+  },
+});
+noShapingEnv.reset();
+const towardGoalX = noShapingEnv.world.goal.x - noShapingEnv.world.pusher.x;
+const towardGoalY = noShapingEnv.world.goal.y - noShapingEnv.world.pusher.y;
+const towardGoalLength = Math.hypot(towardGoalX, towardGoalY);
+const noShapingTransition = noShapingEnv.step(Float32Array.of(
+  towardGoalX / towardGoalLength,
+  towardGoalY / towardGoalLength,
+));
+if (noShapingTransition.pusherDistanceProgress <= 0 || noShapingTransition.reward !== 0) {
+  throw new Error("disabled reward shaping still changed the reward");
+}
 
 // The block starts near the goal, moves to the final task radius by 70%, and
 // gets a randomized valid bearing while holding the scheduled radius exact.

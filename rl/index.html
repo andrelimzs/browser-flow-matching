@@ -110,6 +110,16 @@
               <div class="range-ends"><span id="entropyMin">0</span><span id="entropyMax">0.10</span></div>
             </div>
 
+            <div class="reward-shaping-setting">
+              <p class="control-label">Reward shaping</p>
+              <div class="reward-toggle-grid" role="group" aria-label="Reward shaping terms">
+                <button class="mode-toggle" type="button" data-reward-shaping="blockDistance" aria-pressed="true">Block distance</button>
+                <button class="mode-toggle" type="button" data-reward-shaping="pusherDistance" aria-pressed="true">Pusher distance</button>
+                <button class="mode-toggle" type="button" data-reward-shaping="orientation" aria-pressed="true">Orientation</button>
+                <button class="mode-toggle" type="button" data-reward-shaping="closeness" aria-pressed="true">Final closeness</button>
+              </div>
+            </div>
+
             <div class="solver-setting">
               <span>Position curriculum</span>
               <button id="curriculumToggle" class="mode-toggle curriculum-toggle" type="button" aria-pressed="true">Enabled</button>

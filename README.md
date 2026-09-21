@@ -114,7 +114,8 @@ Block position, pusher position, and orientation progress earn positive reward; 
 negative reward, and waiting earns zero. Pusher-to-goal progress has `0.1×` the weight of block-to-goal
 progress. Orientation error is divided by π, bounding its net shaping range to `[-1, 1]`.
 At success or timeout, the final shape-overlap coverage is added as a closeness reward. Completion counts
-remain explicit in the CLI output.
+remain explicit in the CLI output. The browser exposes independent toggles for block distance, pusher
+distance, orientation, and final-closeness shaping; completion and wall rewards always remain active.
 
 The browser trainer follows CleanRL's continuous-control collection defaults: PPO uses one environment,
 2,048 steps per rollout, 32 minibatches of 64, and 10 update epochs; SAC uses one environment, replay
