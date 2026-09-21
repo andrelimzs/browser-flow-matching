@@ -103,6 +103,7 @@ export class PushTRLEnv {
     this.observation = new Float32Array(RL_OBSERVATION_SIZE);
     this.episodeReturn = 0;
     this.episodeSteps = 0;
+    this.episodeHorizon = horizon;
     this.distance = 0;
     this.pusherDistance = 0;
     this.orientationError = 0;
@@ -198,6 +199,9 @@ export class PushTRLEnv {
   reset() {
     this.world.reset({ obstacleCount: 0 });
     const distanceFraction = this.curriculumDistanceFraction();
+    this.episodeHorizon = this.curriculum
+      ? Math.max(1, Math.round(this.horizon * distanceFraction))
+      : this.horizon;
     if (this.curriculum) this.randomizeBlockPosition(FINAL_BLOCK_GOAL_DISTANCE * distanceFraction);
     this.world.previous.x = this.world.block.x;
     this.world.previous.y = this.world.block.y;
@@ -256,7 +260,7 @@ export class PushTRLEnv {
       : 0;
     const stepPenalty = this.rewardShaping.stepPenalty ? this.rewardWeights.stepPenalty : 0;
     const truncated = !success && !wallTermination && !blockWallTermination && !stalled &&
-      this.episodeSteps >= this.horizon;
+      this.episodeSteps >= this.episodeHorizon;
     const done = success || wallTermination || blockWallTermination || stalled || truncated;
     const finalClosenessReward = done && !wallTermination && !blockWallTermination && !stalled &&
       this.rewardShaping.closeness ? coverage * this.rewardWeights.closeness : 0;

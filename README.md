@@ -39,9 +39,9 @@ align a T-shaped block with a goal pose among circular obstacles. It shares no c
 npm run dev            # http://localhost:5173/browser-flow-matching/pusht/
 npm run check:pusht    # stability, replay determinism, recording pipeline
 npm run bench:pusht    # scripted-expert success rate
-npm run check:rl       # PPO/GRPO environment and optimizer smoke checks
+npm run check:rl       # PPO/Dr.GRPO environment and optimizer smoke checks
 npm run train:ppo -- 200000
-npm run train:grpo -- 200000
+npm run train:drgrpo -- 200000
 ```
 
 ## Physics
@@ -95,9 +95,10 @@ The current zero-obstacle diagonal task keeps lift disabled and removes the expe
 The `rl-policy` branch includes two dependency-free continuous-control baselines. PPO follows CleanRL's
 continuous-control setup: separate orthogonally initialized actor and critic networks, a state-independent
 Gaussian log standard deviation, unsquashed Normal samples clipped by the environment, GAE, clipped policy
-and value losses, linear learning-rate annealing, and a default entropy coefficient of `0`. GRPO samples eight
-stochastic rollouts from the same randomized start, normalizes whole-episode returns within the group, and
-uses those group-relative advantages in a clipped policy update without a critic.
+and value losses, linear learning-rate annealing, and a default entropy coefficient of `0`. Dr.GRPO samples 32
+stochastic rollouts from the same randomized start, mean-centers whole-episode returns without dividing by
+the group standard deviation, and uses a fixed-horizon loss denominator in a clipped update without a critic
+or reference-policy KL term.
 Both deliberately use the same minimal task definition:
 
 - observation: one normalized 11-value simulator frame, with no history or frame stack
@@ -110,7 +111,9 @@ block-to-goal distance. Each episode randomizes the block's valid in-arena beari
 holding that scheduled distance fixed. The pusher moves with it, directly behind the block relative to
 the goal and at the original block–pusher separation. The radius expands linearly, reaches the original
 full-task distance at 70%, and stays there for the remaining 30%. The browser control can disable the
-curriculum to train on the original fixed start from the first episode.
+curriculum to train on the original fixed start from the first episode. While the curriculum is enabled,
+the active episode horizon uses the same fraction: it begins at 25% of the selected maximum, reaches the
+full horizon at 70% training progress, and remains there.
 
 Training is seeded and runs in Node. Set `OUT=policy.json` to save the actor and its evaluation metadata.
 Block position, pusher position, and orientation progress are measured per transition. This deliberately
@@ -123,7 +126,7 @@ Every term has both an enable control and an editable signed coefficient; the di
 the reward exactly as defined above.
 
 The browser trainer follows CleanRL's continuous-control collection defaults for PPO: one environment,
-2,048 steps per rollout, 32 minibatches of 64, and 10 update epochs. GRPO uses groups of eight matched
+2,048 steps per rollout, 32 minibatches of 64, and 10 update epochs. Dr.GRPO uses groups of 32 matched
 rollouts, minibatches of 64, and four update epochs. Checkpoint rollouts and return measurements remain
 spaced every 200 environment transitions, independently of either algorithm's update cadence.
 

@@ -1,7 +1,7 @@
-// Train a single-frame Push-T policy with PPO or GRPO.
+// Train a single-frame Push-T policy with PPO or Dr.GRPO.
 //
 //   node tools/rl-train.mjs ppo 100000
-//   node tools/rl-train.mjs grpo 100000
+//   node tools/rl-train.mjs drgrpo 100000
 //
 // Optional environment variables: SEED, WIDTH, HORIZON, CURRICULUM, OUT.
 
@@ -9,7 +9,7 @@ import { writeFileSync } from "node:fs";
 import { createRandom } from "../src/pusht/sim.js";
 import { PushTRLEnv } from "../src/pusht/rl/env.js";
 import { evaluatePolicy } from "../src/pusht/rl/common.js";
-import { trainGRPO } from "../src/pusht/rl/grpo.js";
+import { DEFAULT_DRGRPO_GROUP_SIZE, trainDrGRPO } from "../src/pusht/rl/grpo.js";
 import { trainPPO } from "../src/pusht/rl/ppo.js";
 
 const algorithm = (process.argv[2] ?? "ppo").toLowerCase();
@@ -19,11 +19,14 @@ const width = Number(process.env.WIDTH ?? 64);
 const horizon = Number(process.env.HORIZON ?? 200);
 const curriculum = process.env.CURRICULUM !== "false";
 if (!Number.isInteger(totalSteps) || totalSteps < 1) throw new Error(`invalid total steps: ${process.argv[3]}`);
-if (algorithm !== "ppo" && algorithm !== "grpo") throw new Error(`algorithm must be ppo or grpo, got ${algorithm}`);
+if (algorithm !== "ppo" && algorithm !== "drgrpo") {
+  throw new Error(`algorithm must be ppo or drgrpo, got ${algorithm}`);
+}
 
 const random = createRandom(seed);
 const env = new PushTRLEnv({ seed: seed + 1, horizon, curriculum });
 const started = process.hrtime.bigint();
+const algorithmLabel = algorithm === "drgrpo" ? "Dr.GRPO" : "PPO";
 
 const onProgress = (progress) => {
   const losses = progress.algorithm === "ppo"
@@ -31,20 +34,20 @@ const onProgress = (progress) => {
     : `policy ${progress.policyLoss.toFixed(4)} group return ${progress.groupReturnMean.toFixed(3)} ± ${progress.groupReturnStd.toFixed(3)}`;
   const interval = progress.algorithm === "ppo" ? progress.rolloutSuccesses : progress.groupSuccesses;
   console.log(
-    `${progress.algorithm.toUpperCase()} ${progress.steps.toLocaleString()}/${totalSteps.toLocaleString()}` +
+    `${algorithmLabel} ${progress.steps.toLocaleString()}/${totalSteps.toLocaleString()}` +
     `  completions ${progress.successes}/${progress.episodes} (+${interval})  ${losses}`,
   );
 };
 
 console.log(
-  `${algorithm.toUpperCase()} · single frame (11) · unit-disk action dx/dy (2) · signed distance/orientation progress + final coverage and completion; -0.01/step; inactivity terminates at 5 still steps\n` +
+  `${algorithmLabel} · single frame (11) · unit-disk action dx/dy (2) · signed distance/orientation progress + final coverage and completion; -0.01/step; inactivity terminates at 5 still steps\n` +
   `seed ${seed} · horizon ${horizon} · width ${width} · curriculum ${curriculum ? "on" : "off"} · steps ${totalSteps.toLocaleString()}`,
 );
 
 const result = algorithm === "ppo"
   ? trainPPO({ env, random, totalSteps, width, onProgress })
-  : trainGRPO({
-      envs: Array.from({ length: 8 }, () => new PushTRLEnv({
+  : trainDrGRPO({
+      envs: Array.from({ length: DEFAULT_DRGRPO_GROUP_SIZE }, () => new PushTRLEnv({
         seed: seed + 1,
         horizon,
         curriculum,
@@ -52,7 +55,7 @@ const result = algorithm === "ppo"
       random,
       totalSteps,
       width,
-      groupSize: 8,
+      groupSize: DEFAULT_DRGRPO_GROUP_SIZE,
       onProgress,
     });
 

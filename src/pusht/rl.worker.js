@@ -1,7 +1,7 @@
 import { createRandom } from "./sim.js";
 import { PushTRLEnv } from "./rl/env.js";
 import { recordPolicyRollout } from "./rl/common.js";
-import { trainGRPO } from "./rl/grpo.js";
+import { DEFAULT_DRGRPO_GROUP_SIZE, trainDrGRPO } from "./rl/grpo.js";
 import { trainPPO } from "./rl/ppo.js";
 
 self.onmessage = ({ data }) => {
@@ -10,6 +10,7 @@ self.onmessage = ({ data }) => {
   const { algorithm, totalSteps, width, horizon, entropyBonus, curriculum, rewardShaping, rewardWeights, seed } = data;
   const env = new PushTRLEnv({ seed, horizon, curriculum, rewardShaping, rewardWeights });
   const random = createRandom(seed + 20_000);
+  let lastLoggedGroup = null;
 
   const logRollout = (progress, models) => {
     const evaluationEnv = new PushTRLEnv({
@@ -31,8 +32,14 @@ self.onmessage = ({ data }) => {
       deterministic: true,
       estimateValue,
     });
-    const groupPaths = (models.groupPaths ?? []).map((points) => Float32Array.from(points));
-    const groupAdvantages = Float32Array.from(models.groupAdvantages ?? []);
+    const hasNewGroup = models.groupPaths && models.groupPaths !== lastLoggedGroup;
+    const groupPaths = hasNewGroup
+      ? models.groupPaths.map((points) => Float32Array.from(points))
+      : [];
+    const groupAdvantages = hasNewGroup
+      ? Float32Array.from(models.groupAdvantages ?? [])
+      : new Float32Array(0);
+    if (hasNewGroup) lastLoggedGroup = models.groupPaths;
     self.postMessage({
       type: "rollout",
       progress,
@@ -46,20 +53,20 @@ self.onmessage = ({ data }) => {
 
   self.postMessage({ type: "started", algorithm });
   try {
-    if (algorithm === "grpo") {
-      const envs = Array.from({ length: 8 }, () => new PushTRLEnv({
+    if (algorithm === "drgrpo") {
+      const envs = Array.from({ length: DEFAULT_DRGRPO_GROUP_SIZE }, () => new PushTRLEnv({
         seed,
         horizon,
         curriculum,
         rewardShaping,
         rewardWeights,
       }));
-      trainGRPO({
+      trainDrGRPO({
         envs,
         totalSteps,
         width,
         entropyCoefficient: entropyBonus,
-        groupSize: 8,
+        groupSize: DEFAULT_DRGRPO_GROUP_SIZE,
         batchSize: 64,
         progressEvery: 200,
         random,

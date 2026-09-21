@@ -16,9 +16,15 @@ import {
   RL_OBSERVATION_SIZE,
 } from "../src/pusht/rl/env.js";
 import { makePPOActor, recordPolicyRollout } from "../src/pusht/rl/common.js";
-import { normalizeGroupAdvantages, trainGRPO } from "../src/pusht/rl/grpo.js";
+import {
+  computeDrGRPOAdvantages,
+  DEFAULT_DRGRPO_GROUP_SIZE,
+  drGRPOLossScale,
+  trainDrGRPO,
+} from "../src/pusht/rl/grpo.js";
 import { computeGAE, trainPPO } from "../src/pusht/rl/ppo.js";
 
+if (DEFAULT_DRGRPO_GROUP_SIZE !== 32) throw new Error("Dr.GRPO group size default is not 32");
 const finiteModel = (model) => model.params.every((buffer) => buffer.every(Number.isFinite));
 const initializedActor = makePPOActor(RL_OBSERVATION_SIZE, 16, 1, createRandom(19));
 const outputWeights = initializedActor.mean.weights.at(-1);
@@ -221,6 +227,9 @@ const checkCurriculumDistance = (progress, expectedFraction) => {
   if (Math.abs(curriculumEnv.blockGoalDistance() - finalDistance * expectedFraction) > 1e-9) {
     throw new Error(`wrong curriculum distance at progress ${progress}`);
   }
+  if (curriculumEnv.episodeHorizon !== Math.round(curriculumEnv.horizon * expectedFraction)) {
+    throw new Error(`wrong curriculum episode horizon at progress ${progress}`);
+  }
   const pusherDistance = Math.hypot(
     curriculumEnv.world.pusher.x - curriculumEnv.world.block.x,
     curriculumEnv.world.pusher.y - curriculumEnv.world.block.y,
@@ -242,6 +251,9 @@ noCurriculumEnv.reset();
 if (noCurriculumEnv.world.block.x !== FIXED_BLOCK_START.x ||
     noCurriculumEnv.world.block.y !== FIXED_BLOCK_START.y) {
   throw new Error("disabled curriculum did not use the final block start");
+}
+if (noCurriculumEnv.episodeHorizon !== noCurriculumEnv.horizon) {
+  throw new Error("disabled curriculum did not preserve the full episode horizon");
 }
 console.log("curriculum: randomized bearing and matched pusher gap, near radius at 0%, final radius at 70%");
 
@@ -506,22 +518,25 @@ for (let frame = 1; frame < sampledRollout.count; frame++) {
 console.log(`sampled rollout: ${sampledRollout.count} frames, pusher travel ${sampledTravel.toFixed(4)}`);
 if (sampledTravel <= 0) throw new Error("sampled rollout did not execute policy noise");
 
-const relative = normalizeGroupAdvantages(Float32Array.of(1, 2, 3));
+const relative = computeDrGRPOAdvantages(Float32Array.of(1, 2, 3));
 const relativeMean = relative.advantages.reduce((sum, value) => sum + value, 0) / 3;
 const relativeVariance = relative.advantages.reduce((sum, value) => sum + value * value, 0) / 3;
-if (Math.abs(relativeMean) > 1e-6 || Math.abs(relativeVariance - 1) > 1e-6 ||
+if (Math.abs(relativeMean) > 1e-6 || Math.abs(relativeVariance - 2 / 3) > 1e-6 ||
     relative.mean !== 2 || Math.abs(relative.standardDeviation - Math.sqrt(2 / 3)) > 1e-6) {
-  throw new Error("GRPO group-return normalization is wrong");
+  throw new Error("Dr.GRPO mean-centered advantage is wrong");
 }
-const tied = normalizeGroupAdvantages(Float32Array.of(4, 4));
+const tied = computeDrGRPOAdvantages(Float32Array.of(4, 4));
 if (tied.advantages[0] !== 0 || tied.advantages[1] !== 0) {
-  throw new Error("GRPO tied returns should have zero relative advantage");
+  throw new Error("Dr.GRPO tied returns should have zero relative advantage");
+}
+if (drGRPOLossScale(240, 4, 80) !== 0.75 || drGRPOLossScale(320, 4, 80) !== 1) {
+  throw new Error("Dr.GRPO loss does not use the fixed-horizon denominator");
 }
 
-let grpoCheckpoints = 0;
-let grpoGroupPaths = 0;
-let grpoGroupAdvantages = 0;
-const grpo = trainGRPO({
+let drgrpoCheckpoints = 0;
+let drgrpoGroupPaths = 0;
+let drgrpoGroupAdvantages = 0;
+const drgrpo = trainDrGRPO({
   envs: Array.from({ length: 4 }, () => new PushTRLEnv({ seed: 30, horizon: 80 })),
   random: createRandom(31),
   totalSteps: 256,
@@ -531,23 +546,23 @@ const grpo = trainGRPO({
   progressEvery: 200,
   width: 16,
   onCheckpoint(progress, models) {
-    if (progress.steps !== 200) throw new Error(`unexpected GRPO checkpoint ${progress.steps}`);
+    if (progress.steps !== 200) throw new Error(`unexpected Dr.GRPO checkpoint ${progress.steps}`);
     if (models.groupPaths.length !== 4 || models.groupPaths.some((path) => path.length < 4)) {
-      throw new Error("GRPO checkpoint did not include the rollout group paths");
+      throw new Error("Dr.GRPO checkpoint did not include the rollout group paths");
     }
     if (models.groupAdvantages.length !== 4 || models.groupAdvantages.some((value) => !Number.isFinite(value))) {
-      throw new Error("GRPO checkpoint did not include finite group advantages");
+      throw new Error("Dr.GRPO checkpoint did not include finite group advantages");
     }
-    grpoGroupPaths = models.groupPaths.length;
-    grpoGroupAdvantages = models.groupAdvantages.length;
-    grpoCheckpoints += 1;
+    drgrpoGroupPaths = models.groupPaths.length;
+    drgrpoGroupAdvantages = models.groupAdvantages.length;
+    drgrpoCheckpoints += 1;
   },
 });
-console.log(`GRPO smoke: ${grpo.steps} steps, finite ${finiteModel(grpo.actor)}`);
-if (!finiteModel(grpo.actor)) throw new Error("GRPO produced non-finite parameters");
-if (grpoCheckpoints !== 1) throw new Error(`expected one GRPO checkpoint, got ${grpoCheckpoints}`);
-if (grpoGroupPaths !== 4) throw new Error("GRPO rollout group was not exposed to the viewer");
-if (grpoGroupAdvantages !== 4) throw new Error("GRPO rollout advantages were not exposed to the viewer");
-if (grpo.actor.actionSquash !== "clip" || grpo.actor.logStd.length !== 2) {
-  throw new Error("GRPO actor is not an unsquashed Normal with global log standard deviation");
+console.log(`Dr.GRPO smoke: ${drgrpo.steps} steps, finite ${finiteModel(drgrpo.actor)}`);
+if (!finiteModel(drgrpo.actor)) throw new Error("Dr.GRPO produced non-finite parameters");
+if (drgrpoCheckpoints !== 1) throw new Error(`expected one Dr.GRPO checkpoint, got ${drgrpoCheckpoints}`);
+if (drgrpoGroupPaths !== 4) throw new Error("Dr.GRPO rollout group was not exposed to the viewer");
+if (drgrpoGroupAdvantages !== 4) throw new Error("Dr.GRPO rollout advantages were not exposed to the viewer");
+if (drgrpo.actor.actionSquash !== "clip" || drgrpo.actor.logStd.length !== 2) {
+  throw new Error("Dr.GRPO actor is not an unsquashed Normal with global log standard deviation");
 }

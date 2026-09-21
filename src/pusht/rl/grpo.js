@@ -1,6 +1,7 @@
-// Group Relative Policy Optimization for the single-frame Push-T environment.
-// Each update compares complete stochastic rollouts from the same initial
-// condition and assigns every transition the normalized return of its rollout.
+// Dr.GRPO for the single-frame Push-T environment. Each update compares
+// stochastic rollouts from the same initial condition, mean-centers their
+// returns without standard-deviation scaling, and uses a fixed-horizon loss
+// denominator so shorter trajectories are not over-weighted.
 
 import { Adam } from "../../flow/adam.js";
 import {
@@ -14,26 +15,31 @@ import {
 } from "./common.js";
 import { RL_ACTION_SIZE, RL_OBSERVATION_SIZE } from "./env.js";
 
-export function normalizeGroupAdvantages(returns, out = new Float32Array(returns.length)) {
+export const DEFAULT_DRGRPO_GROUP_SIZE = 32;
+
+export function computeDrGRPOAdvantages(returns, out = new Float32Array(returns.length)) {
   let mean = 0;
   for (const value of returns) mean += value;
   mean /= Math.max(1, returns.length);
   let variance = 0;
   for (const value of returns) variance += (value - mean) ** 2;
   const standardDeviation = Math.sqrt(variance / Math.max(1, returns.length));
-  const scale = standardDeviation > 1e-8 ? 1 / standardDeviation : 0;
   for (let index = 0; index < returns.length; index++) {
-    out[index] = (returns[index] - mean) * scale;
+    out[index] = returns[index] - mean;
   }
   return { advantages: out, mean, standardDeviation };
 }
 
-export function trainGRPO({
+export function drGRPOLossScale(transitionCount, groupCount, maximumHorizon) {
+  return transitionCount / (groupCount * maximumHorizon);
+}
+
+export function trainDrGRPO({
   env,
   envs,
   random,
   totalSteps = 100_000,
-  groupSize = 8,
+  groupSize = DEFAULT_DRGRPO_GROUP_SIZE,
   epochs = 4,
   batchSize = 64,
   width = 64,
@@ -46,11 +52,11 @@ export function trainGRPO({
   onProgress = () => {},
 } = {}) {
   const environments = envs ?? (env ? [env] : []);
-  if (environments.length < 2) throw new Error("GRPO needs at least two matched environments");
+  if (environments.length < 2) throw new Error("Dr.GRPO needs at least two matched environments");
   if (environments.length !== groupSize) {
-    throw new Error(`GRPO expected ${groupSize} environments, got ${environments.length}`);
+    throw new Error(`Dr.GRPO expected ${groupSize} environments, got ${environments.length}`);
   }
-  if (groupSize > batchSize) throw new Error("GRPO group size cannot exceed batch size");
+  if (groupSize > batchSize) throw new Error("Dr.GRPO group size cannot exceed batch size");
 
   const maximumHorizon = Math.max(...environments.map((environment) => environment.horizon));
   const capacity = groupSize * maximumHorizon;
@@ -143,7 +149,7 @@ export function trainGRPO({
       }
     }
 
-    const normalized = normalizeGroupAdvantages(
+    const groupStatistics = computeDrGRPOAdvantages(
       groupReturns.subarray(0, groupCount),
       groupAdvantages.subarray(0, groupCount),
     );
@@ -154,6 +160,7 @@ export function trainGRPO({
 
     let policyLoss = 0;
     let updates = 0;
+    const fixedLengthScale = drGRPOLossScale(count, groupCount, maximumHorizon);
     for (let epoch = 0; epoch < epochs; epoch++) {
       shuffle(order.subarray(0, count), random);
       for (let start = 0; start < count; start += batchSize) {
@@ -183,12 +190,16 @@ export function trainGRPO({
           const advantage = advantages[index];
           const unclipped = ratio * advantage;
           const clipped = clamp(ratio, 1 - clipRatio, 1 + clipRatio) * advantage;
-          batchPolicyLoss -= Math.min(unclipped, clipped) / batch;
-          const coefficient = unclipped <= clipped ? (-advantage * ratio) / batch : 0;
+          batchPolicyLoss -= Math.min(unclipped, clipped) * fixedLengthScale / batch;
+          const coefficient = unclipped <= clipped
+            ? (-advantage * ratio) * fixedLengthScale / batch
+            : 0;
           actorGradient[row * 2] = coefficient * differenceX * inverseVarianceX;
           actorGradient[row * 2 + 1] = coefficient * differenceY * inverseVarianceY;
-          actor.logStdGradient[0] += coefficient * (-1 + normalizedSquaredX) - entropyCoefficient / batch;
-          actor.logStdGradient[1] += coefficient * (-1 + normalizedSquaredY) - entropyCoefficient / batch;
+          actor.logStdGradient[0] += coefficient * (-1 + normalizedSquaredX) -
+            entropyCoefficient * fixedLengthScale / batch;
+          actor.logStdGradient[1] += coefficient * (-1 + normalizedSquaredY) -
+            entropyCoefficient * fixedLengthScale / batch;
         }
         actor.backward(actorGradient, batch);
         clipGradients(actor, 0.5);
@@ -200,13 +211,13 @@ export function trainGRPO({
 
     steps += count;
     const progress = {
-      algorithm: "grpo",
+      algorithm: "drgrpo",
       steps,
       episodes,
       successes,
       groupSuccesses,
-      groupReturnMean: normalized.mean,
-      groupReturnStd: normalized.standardDeviation,
+      groupReturnMean: groupStatistics.mean,
+      groupReturnStd: groupStatistics.standardDeviation,
       policyLoss: policyLoss / Math.max(1, updates),
     };
     while (steps >= nextCheckpoint) {

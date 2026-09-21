@@ -31,7 +31,7 @@ const REWARD_WEIGHT_DEFAULTS = {
 };
 const entropyConfigs = {
   ppo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
-  grpo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
+  drgrpo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
 };
 const world = new PushWorld({ random: createRandom(41), obstacleCount: 0 });
 const view = createView($("#arena"));
@@ -52,14 +52,16 @@ const state = {
     stepPenalty: true,
   },
   rewardWeights: { ...REWARD_WEIGHT_DEFAULTS },
-  entropyByAlgorithm: { ppo: 0, grpo: 0.01 },
-  widthByAlgorithm: { ppo: 64, grpo: 64 },
+  entropyByAlgorithm: { ppo: 0, drgrpo: 0.01 },
+  widthByAlgorithm: { ppo: 64, drgrpo: 64 },
   seed: 2026,
   worker: null,
   training: false,
   rollouts: [],
   selected: -1,
   pendingLatest: -1,
+  latestGroupPaths: [],
+  latestGroupAdvantages: new Float32Array(0),
   frame: 0,
   lastFrameAt: 0,
 };
@@ -97,6 +99,10 @@ function formatBudget(value) {
 
 function formatRewardWeight(value) {
   return String(Number(value.toFixed(4)));
+}
+
+function formatAlgorithm(algorithm) {
+  return algorithm === "drgrpo" ? "Dr.GRPO" : algorithm.toUpperCase();
 }
 
 function advantagePathColor(advantage) {
@@ -328,13 +334,13 @@ function selectRollout(index) {
   $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
   $("#rolloutPill").dataset.active = "record";
   $("#canvasPathLabel").textContent = rollout.groupPaths.length
-    ? `Evaluation path · ${rollout.groupPaths.length} GRPO paths · blue + / orange − advantage`
+    ? `Evaluation path · ${rollout.groupPaths.length} Dr.GRPO paths · blue + / orange − advantage`
     : "Path · action μ / 1σ radar";
   $("#valueLegendItem").hidden = !rollout.hasValueEstimate;
   $("#valueLegend").textContent = "V(s)";
   $("#valuePlotTitle").textContent = rollout.hasValueEstimate
     ? "Estimated remaining return V(s)"
-    : "Reward over rollout · GRPO has no critic";
+    : "Reward over rollout · Dr.GRPO has no critic";
   drawReturnChart();
   drawRolloutValueChart();
 }
@@ -345,6 +351,10 @@ function addRollout(message) {
   for (let index = 0; index < message.count; index += 1) {
     path[index * 2] = frames[index * ROLLOUT_FRAME_SIZE];
     path[index * 2 + 1] = frames[index * ROLLOUT_FRAME_SIZE + 1];
+  }
+  if (message.groupPaths?.length) {
+    state.latestGroupPaths = message.groupPaths;
+    state.latestGroupAdvantages = message.groupAdvantages;
   }
   state.rollouts.push({
     step: message.step,
@@ -357,8 +367,8 @@ function addRollout(message) {
     count: message.count,
     algorithm: message.progress.algorithm,
     hasValueEstimate: message.hasValueEstimate,
-    groupPaths: message.groupPaths ?? [],
-    groupAdvantages: message.groupAdvantages ?? [],
+    groupPaths: state.latestGroupPaths,
+    groupAdvantages: state.latestGroupAdvantages,
     squashed: message.squashed,
     frames,
     path,
@@ -383,6 +393,8 @@ function resetRun() {
   state.rollouts = [];
   state.selected = -1;
   state.pendingLatest = -1;
+  state.latestGroupPaths = [];
+  state.latestGroupAdvantages = new Float32Array(0);
   state.frame = 0;
   const slider = $("#rolloutSlider");
   slider.disabled = true;
@@ -423,7 +435,7 @@ function startTraining() {
   state.worker = new Worker(new URL("./rl.worker.js", import.meta.url), { type: "module" });
   state.worker.onmessage = ({ data }) => {
     if (data.type === "started") {
-      setStatus(`Training ${data.algorithm.toUpperCase()}`);
+      setStatus(`Training ${formatAlgorithm(data.algorithm)}`);
       return;
     }
     if (data.type === "rollout") {
@@ -443,7 +455,7 @@ function startTraining() {
   };
   state.worker.onerror = (event) => stopTraining(`Training failed: ${event.message}`);
   setTraining(true);
-  $("#statusNote").textContent = `Training ${state.algorithm.toUpperCase()} for ${state.budget.toLocaleString()} steps. The page remains interactive.`;
+  $("#statusNote").textContent = `Training ${formatAlgorithm(state.algorithm)} for ${state.budget.toLocaleString()} steps. The page remains interactive.`;
   state.worker.postMessage({
     type: "start",
     algorithm: state.algorithm,
@@ -523,11 +535,11 @@ function registerWebMcpTools() {
   register({
     name: "start_rl_training",
     title: "Start RL training",
-    description: "Start a PPO or GRPO Push-T training run using the visible page controls.",
+    description: "Start a PPO or Dr.GRPO Push-T training run using the visible page controls.",
     inputSchema: {
       type: "object",
       properties: {
-        algorithm: { type: "string", enum: ["ppo", "grpo"] },
+        algorithm: { type: "string", enum: ["ppo", "drgrpo"] },
         budget: { type: "integer", minimum: BUDGET_MIN, maximum: BUDGET_MAX },
         horizon: { type: "integer", minimum: 200, maximum: 1000, multipleOf: 100 },
         width: { type: "integer", enum: [64, 128, 256] },
@@ -566,7 +578,7 @@ function registerWebMcpTools() {
     annotations: { readOnlyHint: false, untrustedContentHint: false },
     execute(input) {
       if (!input || typeof input !== "object") throw new TypeError("Training configuration is required.");
-      if (!["ppo", "grpo"].includes(input.algorithm)) throw new RangeError("Algorithm must be ppo or grpo.");
+      if (!["ppo", "drgrpo"].includes(input.algorithm)) throw new RangeError("Algorithm must be ppo or drgrpo.");
       if (!Number.isInteger(input.budget) || input.budget < BUDGET_MIN || input.budget > BUDGET_MAX) {
         throw new RangeError("Budget must be an integer from 10000 through 1000000.");
       }
