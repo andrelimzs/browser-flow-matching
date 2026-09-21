@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f3f0e8" />
     <meta name="description" content="Train and inspect PPO and Dr.GRPO policies for Push-T directly in the browser." />
-    <title>RL Training — Push-T</title>
+    <title>Reinforcement Learning — Push-T</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -19,8 +19,8 @@
         </a>
         <div class="header-meta">
           <nav class="page-tabs" aria-label="Push-T pages">
-            <a class="page-tab" href="../pusht/">Simulator</a>
             <a class="page-tab" href="./" aria-current="page">RL training</a>
+            <a class="page-tab" href="../pusht/">Flow BC</a>
             <a class="page-tab" href="../pusht/viewer/">Demo viewer</a>
           </nav>
           <span class="live-indicator"><i></i> Worker ready</span>
@@ -31,19 +31,15 @@
         <section class="rl-titlebar">
           <div>
             <p class="eyebrow">Continuous control laboratory</p>
-            <h1>Learn from <em>contact.</em></h1>
+            <h1>Reinforcement Learning</h1>
           </div>
-          <p>Single-frame observation · unit-disk dx/dy action · PPO and Dr.GRPO training in a Web Worker</p>
+          <p>Single-frame observation · unit-disk dx/dy action · rollout and trainer in web worker</p>
         </section>
 
         <section class="rl-workspace" aria-label="Reinforcement learning trainer">
           <article class="visualizer-card rollout-card">
             <div class="card-heading">
-              <div>
-                <p class="label">Logged every 200 training steps</p>
-                <h2>Policy rollout</h2>
-              </div>
-              <div class="phase-pill" id="rolloutPill"><span></span><span id="rolloutStatus">Awaiting training</span></div>
+              <h2>Policy rollout</h2>
             </div>
 
             <div class="canvas-shell rl-canvas-shell">
@@ -61,7 +57,7 @@
 
             <div class="rollout-scrubber">
               <div>
-                <span>Logged rollout</span>
+                <span>Rollout</span>
                 <output id="rolloutStepOutput">—</output>
               </div>
               <input id="rolloutSlider" type="range" min="0" max="0" step="1" value="0" disabled aria-label="Selected logged rollout" />

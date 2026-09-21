@@ -361,15 +361,13 @@ function selectRollout(index) {
   const rollout = state.rollouts[state.selected];
   const evaluationMode = rollout.deterministicEvaluation ? "Deterministic eval" : "Stochastic eval";
   $("#rolloutSlider").value = String(state.selected);
-  $("#rolloutStepOutput").textContent = `step ${rollout.step.toLocaleString()}`;
+  $("#rolloutStepOutput").textContent = rollout.step.toLocaleString();
   $("#selectedStep").textContent = rollout.step.toLocaleString();
   $("#selectedReturn").textContent = formatReturn(rollout.return);
   $("#selectedCoverage").textContent = `${(rollout.coverage * 100).toFixed(1)}%`;
   $("#selectedSuccessRate").textContent = `${(rollout.evaluationSuccessRate * 100).toFixed(0)}%`;
   $("#rolloutReturnLabel").textContent =
     `${evaluationMode.toLowerCase()} mean ${formatReturn(rollout.return)} · path ${formatReturn(rollout.representativeReturn)}`;
-  $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
-  $("#rolloutPill").dataset.active = "record";
   const peerLabel = `${rollout.evaluationPaths.length} faded eval paths`;
   $("#canvasPathLabel").textContent = rollout.groupPaths.length
     ? `${evaluationMode} path · ${peerLabel} · ${rollout.groupPaths.length} GRPO paths`
@@ -451,7 +449,6 @@ function resetRun() {
   $("#valueLegendItem").hidden = false;
   $("#valueLegend").textContent = "V(s)";
   $("#valuePlotTitle").textContent = "Estimated remaining return V(s)";
-  $("#rolloutStatus").textContent = "Awaiting training";
   $("#latestReturn").textContent = "—";
   drawReturnChart();
   drawRolloutValueChart();
