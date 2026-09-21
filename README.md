@@ -99,7 +99,7 @@ exploration. Both deliberately use the same minimal task definition:
 
 - observation: one normalized 11-value simulator frame, with no history or frame stack
 - action: normalized `dx, dy` in `[-1, 1]`, scaled to one `0.017` pusher step
-- reward: progress in block-to-goal center distance, `0.1×` progress in pusher-to-goal distance, plus progress in normalized orientation error; final overlap coverage as a terminal closeness score, `+1` on completion, and an additive `-1` penalty with termination when the pusher touches the outer wall
+- reward: progress in block-to-goal center distance, `0.1×` progress in pusher-to-goal distance, plus progress in normalized orientation error; final overlap coverage as a terminal closeness score, `+1` on completion, an additive `-1` penalty with termination when the pusher touches the outer wall, and an additive `-10` whenever the block touches the outer wall
 - episode horizon: 200 steps by default
 
 With the position curriculum enabled (the browser default), the block begins at 25% of the original

@@ -4,6 +4,7 @@ import {
   FIXED_BLOCK_START,
   FIXED_PUSHER_START,
   MAX_PUSHER_SPEED,
+  WALL_THICKNESS,
 } from "../src/pusht/sim.js";
 import { ScriptedExpert } from "../src/pusht/expert.js";
 import {
@@ -186,6 +187,34 @@ const expectedWallReward = wallTransition.wallPenalty + wallTransition.distanceP
   0.1 * wallTransition.pusherDistanceProgress + wallTransition.orientationProgress;
 if (wallTransition.wallPenalty !== -1 || Math.abs(wallTransition.reward - expectedWallReward) > 1e-9) {
   throw new Error("wall contact penalty was not summed with shaping");
+}
+
+// Block-wall contact contributes an additive -10 penalty without changing the
+// pusher-wall termination rule.
+const blockWallEnv = new PushTRLEnv({
+  seed: 17,
+  horizon: 100,
+  curriculum: false,
+  rewardShaping: {
+    blockDistance: false,
+    pusherDistance: false,
+    orientation: false,
+    closeness: false,
+  },
+});
+blockWallEnv.reset();
+const minimumLocalX = Math.min(...blockWallEnv.world.blockCorners().flat().map(([x]) => x - blockWallEnv.world.block.x));
+blockWallEnv.world.block.x = WALL_THICKNESS - minimumLocalX;
+blockWallEnv.distance = blockWallEnv.blockGoalDistance();
+blockWallEnv.orientationError = blockWallEnv.blockGoalOrientationError();
+const blockWallTransition = blockWallEnv.step(Float32Array.of(0, 0));
+console.log(
+  `block wall: contact ${blockWallTransition.blockWallContact}, penalty ${blockWallTransition.blockWallPenalty}, ` +
+  `done ${blockWallTransition.done}`,
+);
+if (!blockWallTransition.blockWallContact || blockWallTransition.blockWallPenalty !== -10 ||
+    blockWallTransition.reward !== -10 || blockWallTransition.done) {
+  throw new Error("block-wall contact penalty is wrong");
 }
 
 // Validate the critic input-gradient path against finite differences.
