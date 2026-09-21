@@ -39,9 +39,9 @@ align a T-shaped block with a goal pose among circular obstacles. It shares no c
 npm run dev            # http://localhost:5173/browser-flow-matching/pusht/
 npm run check:pusht    # stability, replay determinism, recording pipeline
 npm run bench:pusht    # scripted-expert success rate
-npm run check:rl       # PPO/SAC environment and optimizer smoke checks
+npm run check:rl       # PPO/GRPO environment and optimizer smoke checks
 npm run train:ppo -- 200000
-npm run train:sac -- 200000
+npm run train:grpo -- 200000
 ```
 
 ## Physics
@@ -95,13 +95,14 @@ The current zero-obstacle diagonal task keeps lift disabled and removes the expe
 The `rl-policy` branch includes two dependency-free continuous-control baselines. PPO follows CleanRL's
 continuous-control setup: separate orthogonally initialized actor and critic networks, a state-independent
 Gaussian log standard deviation, unsquashed Normal samples clipped by the environment, GAE, clipped policy
-and value losses, linear learning-rate annealing, and a default entropy coefficient of `0`. SAC uses a replay
-buffer, twin Q-functions, target networks, and a tanh-squashed Gaussian actor with fixed `0.3` temperature.
+and value losses, linear learning-rate annealing, and a default entropy coefficient of `0`. GRPO samples eight
+stochastic rollouts from the same randomized start, normalizes whole-episode returns within the group, and
+uses those group-relative advantages in a clipped policy update without a critic.
 Both deliberately use the same minimal task definition:
 
 - observation: one normalized 11-value simulator frame, with no history or frame stack
 - action: `dx, dy` projected onto the unit disk, then scaled to at most one `0.017` pusher step (so diagonal and axial commands have the same maximum speed)
-- reward: signed progress (`previous − current`) in block-to-goal distance, pusher-to-goal distance, and normalized orientation error; a full-speed pusher step directly toward the goal earns `+0.01`, no movement earns zero shaping, and regression earns negative shaping. Final closeness is `exp(−distance) + exp(−normalized angle error)`. Completion `+1`, an every-step `−0.01` cost, pusher-wall `−1`, block-wall `−10`, and five-step inactivity `−1` are separate components. Every term has a browser toggle; both wall components default off. Enabling either wall component enables its penalty and immediate termination together. Five consecutive steps without actual pusher displacement always terminate the episode.
+- reward: signed progress (`previous − current`) in block-to-goal distance, pusher-to-goal distance, and normalized orientation error; a full-speed pusher step directly toward the goal earns `+0.01`, no movement earns zero shaping, and regression earns negative shaping. Final shape-overlap coverage is added as closeness. Completion `+1`, an every-step `−0.01` cost, pusher-wall `−1`, block-wall `−10`, and five-step inactivity `−1` are separate components. Every term has a browser toggle; both wall components default off. Enabling either wall component enables its penalty and immediate termination together. Five consecutive steps without actual pusher displacement always terminate the episode.
 - episode horizon: 200 steps by default
 
 With the position curriculum enabled (the browser default), the block begins at 25% of the original
@@ -115,14 +116,16 @@ Training is seeded and runs in Node. Set `OUT=policy.json` to save the actor and
 Block position, pusher position, and orientation progress are measured per transition. This deliberately
 keeps stationary shaping at exactly zero. The pusher coefficient is `0.01` per maximum-speed step, and
 orientation error is divided by π.
-At success or timeout, the exponential distance-and-orientation score is added as a closeness reward. Completion counts
-remain explicit in the CLI output. The browser separates toggles for the three potential-shaping terms from
-toggles for completion, final closeness, the enabled-by-default step cost and inactivity penalty, and the two optional wall penalties.
+At success or timeout, final shape-overlap coverage is added as a closeness reward. Completion counts
+remain explicit in the CLI output. The browser separates the three potential-shaping terms from completion,
+final coverage, the enabled-by-default step cost and inactivity penalty, and the two optional wall penalties.
+Every term has both an enable control and an editable signed coefficient; the displayed defaults reproduce
+the reward exactly as defined above.
 
-The browser trainer follows CleanRL's continuous-control collection defaults: PPO uses one environment,
-2,048 steps per rollout, 32 minibatches of 64, and 10 update epochs; SAC uses one environment, replay
-minibatches of 256, and 5,000 warmup steps. Checkpoint rollouts and return measurements remain spaced
-every 200 environment transitions, independently of PPO's update cadence.
+The browser trainer follows CleanRL's continuous-control collection defaults for PPO: one environment,
+2,048 steps per rollout, 32 minibatches of 64, and 10 update epochs. GRPO uses groups of eight matched
+rollouts, minibatches of 64, and four update epochs. Checkpoint rollouts and return measurements remain
+spaced every 200 environment transitions, independently of either algorithm's update cadence.
 
 ## Multimodality
 

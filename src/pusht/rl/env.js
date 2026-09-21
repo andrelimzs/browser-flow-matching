@@ -26,6 +26,7 @@ export const CURRICULUM_FINAL_PROGRESS = 0.7;
 export const CURRICULUM_INITIAL_DISTANCE_FRACTION = 0.25;
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+const rewardWeight = (value, fallback) => Number.isFinite(value) ? value : fallback;
 
 export function cartesianActionToDelta(action, out = new Float32Array(2)) {
   const rawX = Number.isFinite(action[0]) ? action[0] : 0;
@@ -65,6 +66,7 @@ export class PushTRLEnv {
     pusherDistanceRewardScale = 0.01 / MAX_PUSHER_SPEED,
     orientationRewardScale = 1,
     rewardShaping = {},
+    rewardWeights = {},
     curriculum = true,
   } = {}) {
     this.random = createRandom(seed);
@@ -84,6 +86,17 @@ export class PushTRLEnv {
       blockWall: rewardShaping.blockWall ?? false,
       inactivity: rewardShaping.inactivity ?? true,
       stepPenalty: rewardShaping.stepPenalty ?? true,
+    };
+    this.rewardWeights = {
+      completion: rewardWeight(rewardWeights.completion, 1),
+      blockDistance: rewardWeight(rewardWeights.blockDistance, distanceRewardScale),
+      pusherDistance: rewardWeight(rewardWeights.pusherDistance, pusherDistanceRewardScale),
+      orientation: rewardWeight(rewardWeights.orientation, orientationRewardScale),
+      closeness: rewardWeight(rewardWeights.closeness, 1),
+      pusherWall: rewardWeight(rewardWeights.pusherWall, -1),
+      blockWall: rewardWeight(rewardWeights.blockWall, -10),
+      inactivity: rewardWeight(rewardWeights.inactivity, -1),
+      stepPenalty: rewardWeight(rewardWeights.stepPenalty, -0.01),
     };
     this.curriculum = curriculum;
     this.trainingProgress = 0;
@@ -214,17 +227,17 @@ export class PushTRLEnv {
     const previousDistance = this.distance;
     const distance = this.blockGoalDistance();
     const distanceProgress = previousDistance - distance;
-    const distanceShapingReward = this.distanceRewardScale * distanceProgress;
+    const distanceShapingReward = distanceProgress * this.rewardWeights.blockDistance;
     this.distance = distance;
     const previousPusherDistance = this.pusherDistance;
     const pusherDistance = this.pusherGoalDistance();
     const pusherDistanceProgress = previousPusherDistance - pusherDistance;
-    const pusherDistanceShapingReward = this.pusherDistanceRewardScale * pusherDistanceProgress;
+    const pusherDistanceShapingReward = pusherDistanceProgress * this.rewardWeights.pusherDistance;
     this.pusherDistance = pusherDistance;
     const previousOrientationError = this.orientationError;
     const orientationError = this.blockGoalOrientationError();
     const orientationProgress = previousOrientationError - orientationError;
-    const orientationShapingReward = this.orientationRewardScale * orientationProgress;
+    const orientationShapingReward = orientationProgress * this.rewardWeights.orientation;
     this.orientationError = orientationError;
     const coverage = this.world.coverage();
     const success = coverage >= SUCCESS_COVERAGE;
@@ -233,18 +246,20 @@ export class PushTRLEnv {
     const blockWallContact = this.blockTouchesWall();
     const blockWallTermination = !success && blockWallContact && this.rewardShaping.blockWall;
     const stalled = !success && this.stationarySteps >= this.maxStationarySteps;
-    const completionReward = success && this.rewardShaping.completion ? 1 : 0;
-    const wallPenalty = wallTermination ? -1 : 0;
-    const blockWallPenalty = blockWallTermination ? -10 : 0;
-    const inactivityPenalty = stalled && this.rewardShaping.inactivity ? -1 : 0;
-    const stepPenalty = this.rewardShaping.stepPenalty ? -0.01 : 0;
+    const completionReward = success && this.rewardShaping.completion
+      ? this.rewardWeights.completion
+      : 0;
+    const wallPenalty = wallTermination ? this.rewardWeights.pusherWall : 0;
+    const blockWallPenalty = blockWallTermination ? this.rewardWeights.blockWall : 0;
+    const inactivityPenalty = stalled && this.rewardShaping.inactivity
+      ? this.rewardWeights.inactivity
+      : 0;
+    const stepPenalty = this.rewardShaping.stepPenalty ? this.rewardWeights.stepPenalty : 0;
     const truncated = !success && !wallTermination && !blockWallTermination && !stalled &&
       this.episodeSteps >= this.horizon;
     const done = success || wallTermination || blockWallTermination || stalled || truncated;
     const finalClosenessReward = done && !wallTermination && !blockWallTermination && !stalled &&
-      this.rewardShaping.closeness
-      ? Math.exp(-distance) + Math.exp(-orientationError)
-      : 0;
+      this.rewardShaping.closeness ? coverage * this.rewardWeights.closeness : 0;
     const reward = completionReward + finalClosenessReward + wallPenalty + blockWallPenalty +
       inactivityPenalty + stepPenalty +
       (this.rewardShaping.blockDistance ? distanceShapingReward : 0) +

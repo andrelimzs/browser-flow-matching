@@ -12,7 +12,7 @@
     "tune:pusht": "node tools/tune.mjs",
     "check:rl": "node tools/rl-check.mjs",
     "train:ppo": "node tools/rl-train.mjs ppo",
-    "train:sac": "node tools/rl-train.mjs sac",
+    "train:grpo": "node tools/rl-train.mjs grpo",
     "check:flow": "node tools/flow-gradcheck.mjs && node tools/flow-check.mjs",
     "bench:flow": "node tools/flow-bench.mjs"
   },

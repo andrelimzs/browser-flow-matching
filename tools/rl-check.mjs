@@ -16,8 +16,8 @@ import {
   RL_OBSERVATION_SIZE,
 } from "../src/pusht/rl/env.js";
 import { makePPOActor, recordPolicyRollout } from "../src/pusht/rl/common.js";
+import { normalizeGroupAdvantages, trainGRPO } from "../src/pusht/rl/grpo.js";
 import { computeGAE, trainPPO } from "../src/pusht/rl/ppo.js";
-import { trainSAC } from "../src/pusht/rl/sac.js";
 
 const finiteModel = (model) => model.params.every((buffer) => buffer.every(Number.isFinite));
 const initializedActor = makePPOActor(RL_OBSERVATION_SIZE, 16, 1, createRandom(19));
@@ -49,6 +49,14 @@ if (scaledRewardEnv.rewardShaping.pusherWall || scaledRewardEnv.rewardShaping.bl
   throw new Error("wall reward components do not default to off");
 }
 if (!scaledRewardEnv.rewardShaping.stepPenalty) throw new Error("step penalty does not default to on");
+if (scaledRewardEnv.rewardWeights.blockDistance !== 3 ||
+    Math.abs(scaledRewardEnv.rewardWeights.pusherDistance - 0.01 / MAX_PUSHER_SPEED) > 1e-12 ||
+    scaledRewardEnv.rewardWeights.orientation !== 1 || scaledRewardEnv.rewardWeights.completion !== 1 ||
+    scaledRewardEnv.rewardWeights.closeness !== 1 || scaledRewardEnv.rewardWeights.pusherWall !== -1 ||
+    scaledRewardEnv.rewardWeights.blockWall !== -10 || scaledRewardEnv.rewardWeights.inactivity !== -1 ||
+    scaledRewardEnv.rewardWeights.stepPenalty !== -0.01) {
+  throw new Error("reward weights do not preserve the previous defaults");
+}
 const noShapingEnv = new PushTRLEnv({
   seed: 8,
   curriculum: false,
@@ -70,6 +78,22 @@ const noShapingTransition = noShapingEnv.step(normalizedAction(
 ));
 if (noShapingTransition.pusherDistanceProgress <= 0 || noShapingTransition.reward !== 0) {
   throw new Error("disabled reward shaping still changed the reward");
+}
+const weightedStepEnv = new PushTRLEnv({
+  seed: 8,
+  curriculum: false,
+  rewardShaping: {
+    blockDistance: false,
+    pusherDistance: false,
+    orientation: false,
+    closeness: false,
+  },
+  rewardWeights: { stepPenalty: -0.25 },
+});
+weightedStepEnv.reset();
+const weightedStepTransition = weightedStepEnv.step(Float32Array.of(1, 0));
+if (weightedStepTransition.stepPenalty !== -0.25 || weightedStepTransition.reward !== -0.25) {
+  throw new Error("custom reward weight did not scale the enabled component");
 }
 const stationaryShapingEnv = new PushTRLEnv({ seed: 8, curriculum: false });
 stationaryShapingEnv.reset();
@@ -293,10 +317,8 @@ console.log(
 if (!closenessTransition.truncated || closenessTransition.success || closenessTransition.wallContact) {
   throw new Error("closeness test did not terminate by horizon");
 }
-const expectedClosenessReward = Math.exp(-closenessTransition.distance) +
-  Math.exp(-closenessTransition.orientationError);
-if (Math.abs(closenessTransition.finalClosenessReward - expectedClosenessReward) > 1e-6) {
-  throw new Error("terminal closeness reward does not match exp(-distance) + exp(-angle error)");
+if (Math.abs(closenessTransition.finalClosenessReward - closenessTransition.coverage) > 1e-6) {
+  throw new Error("terminal closeness reward does not match final shape-overlap coverage");
 }
 
 // The pusher-wall toggle links its penalty and termination behavior.
@@ -427,9 +449,8 @@ for (let index = 0; index < expectedGAE.length; index++) {
 }
 console.log("GAE: interleaved environments, terminal trace cut, and final bootstrap match reference");
 
-// Short algorithm smoke runs catch non-finite losses, buffer mistakes and SAC's
-// actor-through-critic gradient wiring. They are not expected to solve the task
-// in a few hundred interactions.
+// Short algorithm smoke runs catch non-finite losses and buffer mistakes. They
+// are not expected to solve the task in a few hundred interactions.
 let ppoCheckpoints = 0;
 const ppo = trainPPO({
   env: new PushTRLEnv({ seed: 20, horizon: 80 }),
@@ -485,16 +506,48 @@ for (let frame = 1; frame < sampledRollout.count; frame++) {
 console.log(`sampled rollout: ${sampledRollout.count} frames, pusher travel ${sampledTravel.toFixed(4)}`);
 if (sampledTravel <= 0) throw new Error("sampled rollout did not execute policy noise");
 
-const sac = trainSAC({
-  env: new PushTRLEnv({ seed: 30, horizon: 80 }),
+const relative = normalizeGroupAdvantages(Float32Array.of(1, 2, 3));
+const relativeMean = relative.advantages.reduce((sum, value) => sum + value, 0) / 3;
+const relativeVariance = relative.advantages.reduce((sum, value) => sum + value * value, 0) / 3;
+if (Math.abs(relativeMean) > 1e-6 || Math.abs(relativeVariance - 1) > 1e-6 ||
+    relative.mean !== 2 || Math.abs(relative.standardDeviation - Math.sqrt(2 / 3)) > 1e-6) {
+  throw new Error("GRPO group-return normalization is wrong");
+}
+const tied = normalizeGroupAdvantages(Float32Array.of(4, 4));
+if (tied.advantages[0] !== 0 || tied.advantages[1] !== 0) {
+  throw new Error("GRPO tied returns should have zero relative advantage");
+}
+
+let grpoCheckpoints = 0;
+let grpoGroupPaths = 0;
+let grpoGroupAdvantages = 0;
+const grpo = trainGRPO({
+  envs: Array.from({ length: 4 }, () => new PushTRLEnv({ seed: 30, horizon: 80 })),
   random: createRandom(31),
   totalSteps: 256,
-  warmupSteps: 64,
   batchSize: 32,
-  replayCapacity: 512,
-  progressEvery: 256,
+  groupSize: 4,
+  epochs: 1,
+  progressEvery: 200,
   width: 16,
+  onCheckpoint(progress, models) {
+    if (progress.steps !== 200) throw new Error(`unexpected GRPO checkpoint ${progress.steps}`);
+    if (models.groupPaths.length !== 4 || models.groupPaths.some((path) => path.length < 4)) {
+      throw new Error("GRPO checkpoint did not include the rollout group paths");
+    }
+    if (models.groupAdvantages.length !== 4 || models.groupAdvantages.some((value) => !Number.isFinite(value))) {
+      throw new Error("GRPO checkpoint did not include finite group advantages");
+    }
+    grpoGroupPaths = models.groupPaths.length;
+    grpoGroupAdvantages = models.groupAdvantages.length;
+    grpoCheckpoints += 1;
+  },
 });
-const sacFinite = finiteModel(sac.actor) && finiteModel(sac.critic1) && finiteModel(sac.critic2);
-console.log(`SAC smoke: ${sac.steps} steps, replay ${sac.replay.size}, finite ${sacFinite}`);
-if (!sacFinite) throw new Error("SAC produced non-finite parameters");
+console.log(`GRPO smoke: ${grpo.steps} steps, finite ${finiteModel(grpo.actor)}`);
+if (!finiteModel(grpo.actor)) throw new Error("GRPO produced non-finite parameters");
+if (grpoCheckpoints !== 1) throw new Error(`expected one GRPO checkpoint, got ${grpoCheckpoints}`);
+if (grpoGroupPaths !== 4) throw new Error("GRPO rollout group was not exposed to the viewer");
+if (grpoGroupAdvantages !== 4) throw new Error("GRPO rollout advantages were not exposed to the viewer");
+if (grpo.actor.actionSquash !== "clip" || grpo.actor.logStd.length !== 2) {
+  throw new Error("GRPO actor is not an unsquashed Normal with global log standard deviation");
+}

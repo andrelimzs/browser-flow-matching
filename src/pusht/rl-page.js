@@ -1,6 +1,6 @@
 import "./style.css";
 import "./rl-style.css";
-import { PushWorld, createRandom } from "./sim.js";
+import { MAX_PUSHER_SPEED, PushWorld, createRandom } from "./sim.js";
 import { createView } from "./render.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -18,9 +18,20 @@ const REWARD_COMPONENTS = [
   "inactivity",
   "stepPenalty",
 ];
+const REWARD_WEIGHT_DEFAULTS = {
+  completion: 1,
+  blockDistance: 1,
+  pusherDistance: 0.01 / MAX_PUSHER_SPEED,
+  orientation: 1,
+  closeness: 1,
+  pusherWall: -1,
+  blockWall: -10,
+  inactivity: -1,
+  stepPenalty: -0.01,
+};
 const entropyConfigs = {
   ppo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
-  sac: { label: "Temperature α", min: 0, max: 0.5, step: 0.01, digits: 2 },
+  grpo: { label: "Entropy bonus", min: 0, max: 0.1, step: 0.005, digits: 3 },
 };
 const world = new PushWorld({ random: createRandom(41), obstacleCount: 0 });
 const view = createView($("#arena"));
@@ -40,8 +51,9 @@ const state = {
     inactivity: true,
     stepPenalty: true,
   },
-  entropyByAlgorithm: { ppo: 0, sac: 0.3 },
-  widthByAlgorithm: { ppo: 64, sac: 256 },
+  rewardWeights: { ...REWARD_WEIGHT_DEFAULTS },
+  entropyByAlgorithm: { ppo: 0, grpo: 0.01 },
+  widthByAlgorithm: { ppo: 64, grpo: 64 },
   seed: 2026,
   worker: null,
   training: false,
@@ -65,8 +77,8 @@ function setTraining(active, label = active ? "Training" : "Idle") {
   $("#horizonSlider").disabled = active;
   $("#entropySlider").disabled = active;
   $("#curriculumToggle").disabled = active;
-  document.querySelectorAll("[data-algorithm], [data-width], [data-reward-shaping]").forEach((button) => {
-    button.disabled = active;
+  document.querySelectorAll("[data-algorithm], [data-width], [data-reward-shaping], [data-reward-weight]").forEach((control) => {
+    control.disabled = active;
   });
   $("#trainingPill").dataset.active = active ? "true" : "false";
   $(".live-indicator").classList.toggle("is-running", active);
@@ -81,6 +93,18 @@ function formatReturn(value) {
 function formatBudget(value) {
   if (value >= 1_000_000) return `${value / 1_000_000}M`;
   return `${Math.round(value / 1000)}k`;
+}
+
+function formatRewardWeight(value) {
+  return String(Number(value.toFixed(4)));
+}
+
+function advantagePathColor(advantage) {
+  const strength = Math.min(1, Math.abs(advantage) / 2);
+  const alpha = 0.2 + strength * 0.48;
+  if (advantage > 0.05) return `rgba(29, 102, 219, ${alpha})`;
+  if (advantage < -0.05) return `rgba(218, 107, 57, ${alpha})`;
+  return "rgba(90, 96, 92, .24)";
 }
 
 function budgetFromExponent(exponent) {
@@ -198,6 +222,7 @@ function drawRolloutValueChart() {
   }
 
   const rollout = state.rollouts[state.selected];
+  const hasValueEstimate = rollout.hasValueEstimate;
   const values = [];
   const rewards = [];
   for (let frame = 0; frame < rollout.count; frame += 1) {
@@ -223,7 +248,7 @@ function drawRolloutValueChart() {
     }
     return [minimum, maximum];
   };
-  const [valueMinimum, valueMaximum] = range(values);
+  const [valueMinimum, valueMaximum] = hasValueEstimate ? range(values) : [0, 1];
   const [rewardMinimum, rewardMaximum] = range(rewards, true);
   const x = (frame) => padding.left + frame / Math.max(1, rollout.count - 1) * plotWidth;
   const valueY = (value) => padding.top + (valueMaximum - value) / (valueMaximum - valueMinimum) * plotHeight;
@@ -240,14 +265,16 @@ function drawRolloutValueChart() {
     context.stroke();
   });
 
-  context.beginPath();
-  values.forEach((value, frame) => {
-    if (frame === 0) context.moveTo(x(frame), valueY(value));
-    else context.lineTo(x(frame), valueY(value));
-  });
-  context.strokeStyle = "#1d66db";
-  context.lineWidth = 2;
-  context.stroke();
+  if (hasValueEstimate) {
+    context.beginPath();
+    values.forEach((value, frame) => {
+      if (frame === 0) context.moveTo(x(frame), valueY(value));
+      else context.lineTo(x(frame), valueY(value));
+    });
+    context.strokeStyle = "#1d66db";
+    context.lineWidth = 2;
+    context.stroke();
+  }
 
   const markerX = x(Math.min(state.frame, rollout.count - 1));
   context.save();
@@ -261,10 +288,12 @@ function drawRolloutValueChart() {
   context.restore();
 
   context.font = '9px "DM Mono", monospace';
-  context.fillStyle = "#1d66db";
-  context.textAlign = "right";
-  context.fillText(valueMaximum.toFixed(2), padding.left - 7, padding.top + 3);
-  context.fillText(valueMinimum.toFixed(2), padding.left - 7, padding.top + plotHeight);
+  if (hasValueEstimate) {
+    context.fillStyle = "#1d66db";
+    context.textAlign = "right";
+    context.fillText(valueMaximum.toFixed(2), padding.left - 7, padding.top + 3);
+    context.fillText(valueMinimum.toFixed(2), padding.left - 7, padding.top + plotHeight);
+  }
   context.fillStyle = "#c9513d";
   context.textAlign = "left";
   context.fillText(rewardMaximum.toFixed(2), padding.left + plotWidth + 7, padding.top + 3);
@@ -298,9 +327,14 @@ function selectRollout(index) {
   $("#rolloutReturnLabel").textContent = `return ${formatReturn(rollout.return)}`;
   $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
   $("#rolloutPill").dataset.active = "record";
-  const valueLabel = rollout.algorithm === "sac" ? "min Q(s,a)" : "V(s)";
-  $("#valueLegend").textContent = valueLabel;
-  $("#valuePlotTitle").textContent = `Estimated remaining return ${valueLabel}`;
+  $("#canvasPathLabel").textContent = rollout.groupPaths.length
+    ? `Evaluation path · ${rollout.groupPaths.length} GRPO paths · blue + / orange − advantage`
+    : "Path · action μ / 1σ radar";
+  $("#valueLegendItem").hidden = !rollout.hasValueEstimate;
+  $("#valueLegend").textContent = "V(s)";
+  $("#valuePlotTitle").textContent = rollout.hasValueEstimate
+    ? "Estimated remaining return V(s)"
+    : "Reward over rollout · GRPO has no critic";
   drawReturnChart();
   drawRolloutValueChart();
 }
@@ -322,6 +356,9 @@ function addRollout(message) {
     coverage: message.coverage,
     count: message.count,
     algorithm: message.progress.algorithm,
+    hasValueEstimate: message.hasValueEstimate,
+    groupPaths: message.groupPaths ?? [],
+    groupAdvantages: message.groupAdvantages ?? [],
     squashed: message.squashed,
     frames,
     path,
@@ -359,6 +396,10 @@ function resetRun() {
   $("#selectedCoverage").textContent = "—";
   $("#selectedOutcome").textContent = "—";
   $("#rolloutReturnLabel").textContent = "return —";
+  $("#canvasPathLabel").textContent = "Path · action μ / 1σ radar";
+  $("#valueLegendItem").hidden = false;
+  $("#valueLegend").textContent = "V(s)";
+  $("#valuePlotTitle").textContent = "Estimated remaining return V(s)";
   $("#rolloutStatus").textContent = "Awaiting training";
   $("#latestReturn").textContent = "—";
   $("#stepsMetric").textContent = "0";
@@ -412,6 +453,7 @@ function startTraining() {
     entropyBonus: state.entropyByAlgorithm[state.algorithm],
     curriculum: state.curriculum,
     rewardShaping: { ...state.rewardShaping },
+    rewardWeights: { ...state.rewardWeights },
     seed: state.seed,
   });
 }
@@ -446,8 +488,16 @@ function draw(timestamp) {
   world.block.x = rollout.frames[offset + 2];
   world.block.y = rollout.frames[offset + 3];
   world.block.angle = rollout.frames[offset + 4];
+  const groupPaths = rollout.groupPaths.map((points, index) => ({
+    points,
+    color: advantagePathColor(rollout.groupAdvantages[index] ?? 0),
+    width: 1.35,
+  }));
   view.draw(world, {
-    paths: [{ points: rollout.path, cursor: state.frame + 1, color: "rgba(237, 107, 85, .72)", width: 1.8 }],
+    paths: [
+      ...groupPaths,
+      { points: rollout.path, cursor: state.frame + 1, color: "rgba(25, 28, 27, .78)", width: 1.9 },
+    ],
     coverage: rollout.frames[offset + 5],
     actionDistribution: {
       meanX: rollout.frames[offset + 6],
@@ -473,11 +523,11 @@ function registerWebMcpTools() {
   register({
     name: "start_rl_training",
     title: "Start RL training",
-    description: "Start a PPO or SAC Push-T training run using the visible page controls.",
+    description: "Start a PPO or GRPO Push-T training run using the visible page controls.",
     inputSchema: {
       type: "object",
       properties: {
-        algorithm: { type: "string", enum: ["ppo", "sac"] },
+        algorithm: { type: "string", enum: ["ppo", "grpo"] },
         budget: { type: "integer", minimum: BUDGET_MIN, maximum: BUDGET_MAX },
         horizon: { type: "integer", minimum: 200, maximum: 1000, multipleOf: 100 },
         width: { type: "integer", enum: [64, 128, 256] },
@@ -499,14 +549,24 @@ function registerWebMcpTools() {
           required: REWARD_COMPONENTS,
           additionalProperties: false,
         },
+        rewardWeights: {
+          type: "object",
+          properties: Object.fromEntries(REWARD_COMPONENTS.map((term) => [term, {
+            type: "number",
+            minimum: -100,
+            maximum: 100,
+          }])),
+          required: REWARD_COMPONENTS,
+          additionalProperties: false,
+        },
       },
-      required: ["algorithm", "budget", "horizon", "width", "entropyBonus", "curriculum", "rewardShaping"],
+      required: ["algorithm", "budget", "horizon", "width", "entropyBonus", "curriculum", "rewardShaping", "rewardWeights"],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, untrustedContentHint: false },
     execute(input) {
       if (!input || typeof input !== "object") throw new TypeError("Training configuration is required.");
-      if (!["ppo", "sac"].includes(input.algorithm)) throw new RangeError("Algorithm must be ppo or sac.");
+      if (!["ppo", "grpo"].includes(input.algorithm)) throw new RangeError("Algorithm must be ppo or grpo.");
       if (!Number.isInteger(input.budget) || input.budget < BUDGET_MIN || input.budget > BUDGET_MAX) {
         throw new RangeError("Budget must be an integer from 10000 through 1000000.");
       }
@@ -524,6 +584,11 @@ function registerWebMcpTools() {
       )) {
         throw new TypeError("Every reward-shaping toggle must be true or false.");
       }
+      if (!input.rewardWeights || REWARD_COMPONENTS.some((term) =>
+        typeof input.rewardWeights[term] !== "number" || !Number.isFinite(input.rewardWeights[term]) ||
+        input.rewardWeights[term] < -100 || input.rewardWeights[term] > 100)) {
+        throw new TypeError("Every reward weight must be a finite number from -100 through 100.");
+      }
       if (state.training) throw new Error("A training run is already active.");
 
       state.algorithm = input.algorithm;
@@ -533,6 +598,7 @@ function registerWebMcpTools() {
       state.entropyByAlgorithm[state.algorithm] = input.entropyBonus;
       state.curriculum = input.curriculum;
       state.rewardShaping = { ...input.rewardShaping };
+      state.rewardWeights = { ...input.rewardWeights };
       document.querySelectorAll("[data-algorithm]").forEach((button) => {
         button.setAttribute("aria-pressed", String(button.dataset.algorithm === state.algorithm));
       });
@@ -551,6 +617,7 @@ function registerWebMcpTools() {
         budget: state.budget,
         curriculum: state.curriculum,
         rewardShaping: { ...state.rewardShaping },
+        rewardWeights: { ...state.rewardWeights },
       };
     },
   });
@@ -572,6 +639,7 @@ function registerWebMcpTools() {
         entropyBonus: state.entropyByAlgorithm[state.algorithm],
         curriculum: state.curriculum,
         rewardShaping: { ...state.rewardShaping },
+        rewardWeights: { ...state.rewardWeights },
         loggedRollouts: state.rollouts.length,
         latestStep: state.rollouts.at(-1)?.step ?? 0,
         selectedRollout: selected ? {
@@ -628,6 +696,9 @@ function updateRewardShapingControls() {
   document.querySelectorAll("[data-reward-shaping]").forEach((button) => {
     button.setAttribute("aria-pressed", String(state.rewardShaping[button.dataset.rewardShaping]));
   });
+  document.querySelectorAll("[data-reward-weight]").forEach((input) => {
+    input.value = formatRewardWeight(state.rewardWeights[input.dataset.rewardWeight]);
+  });
 }
 
 $("#curriculumToggle").addEventListener("click", () => {
@@ -640,6 +711,16 @@ document.querySelectorAll("[data-reward-shaping]").forEach((button) => {
     const term = button.dataset.rewardShaping;
     state.rewardShaping[term] = !state.rewardShaping[term];
     updateRewardShapingControls();
+  });
+});
+
+document.querySelectorAll("[data-reward-weight]").forEach((input) => {
+  input.addEventListener("change", () => {
+    const value = Number(input.value);
+    if (Number.isFinite(value) && value >= -100 && value <= 100) {
+      state.rewardWeights[input.dataset.rewardWeight] = value;
+    }
+    input.value = formatRewardWeight(state.rewardWeights[input.dataset.rewardWeight]);
   });
 });
 

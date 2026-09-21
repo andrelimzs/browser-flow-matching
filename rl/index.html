@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f3f0e8" />
-    <meta name="description" content="Train and inspect PPO and SAC policies for Push-T directly in the browser." />
+    <meta name="description" content="Train and inspect PPO and GRPO policies for Push-T directly in the browser." />
     <title>RL Training — Push-T</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -33,7 +33,7 @@
             <p class="eyebrow">Continuous control laboratory</p>
             <h1>Learn from <em>contact.</em></h1>
           </div>
-          <p>Single-frame observation · unit-disk dx/dy action · PPO and SAC training in a Web Worker</p>
+          <p>Single-frame observation · unit-disk dx/dy action · PPO and GRPO training in a Web Worker</p>
         </section>
 
         <section class="rl-workspace" aria-label="Reinforcement learning trainer">
@@ -48,7 +48,7 @@
 
             <div class="canvas-shell rl-canvas-shell">
               <canvas id="arena" aria-label="Selected reinforcement-learning policy rollout"></canvas>
-              <div class="canvas-label canvas-label-source">Path · action μ / 1σ radar</div>
+              <div class="canvas-label canvas-label-source" id="canvasPathLabel">Path · action μ / 1σ radar</div>
               <div class="canvas-label canvas-label-target"><span id="rolloutReturnLabel">return —</span></div>
               <div class="rollout-empty" id="rolloutEmpty">
                 <strong>No rollouts logged yet</strong>
@@ -78,7 +78,7 @@
                   <strong id="valuePlotTitle">Estimated remaining return V(s)</strong>
                 </div>
                 <div class="plot-legend" aria-hidden="true">
-                  <span><i class="value-swatch"></i><b id="valueLegend">V(s)</b></span>
+                  <span id="valueLegendItem"><i class="value-swatch"></i><b id="valueLegend">V(s)</b></span>
                   <span><i class="reward-swatch"></i><b>Reward</b></span>
                 </div>
               </div>
@@ -98,7 +98,7 @@
             <p class="control-label">Algorithm</p>
             <div class="mode-row" role="group" aria-label="RL algorithm">
               <button class="mode-toggle" type="button" data-algorithm="ppo" aria-pressed="true">PPO</button>
-              <button class="mode-toggle" type="button" data-algorithm="sac" aria-pressed="false">SAC</button>
+              <button class="mode-toggle" type="button" data-algorithm="grpo" aria-pressed="false">GRPO</button>
             </div>
 
             <div class="button-row">
@@ -126,22 +126,49 @@
 
             <div class="reward-shaping-setting">
               <p class="control-label">Reward shaping</p>
-              <div class="reward-toggle-grid" role="group" aria-label="Reward shaping terms">
-                <button class="mode-toggle" type="button" data-reward-shaping="blockDistance" aria-pressed="true">Block distance</button>
-                <button class="mode-toggle" type="button" data-reward-shaping="pusherDistance" aria-pressed="true">Pusher distance</button>
-                <button class="mode-toggle" type="button" data-reward-shaping="orientation" aria-pressed="true">Orientation</button>
+              <div class="reward-control-list" role="group" aria-label="Reward shaping terms">
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="blockDistance" aria-pressed="true">Block distance</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="1" data-reward-weight="blockDistance" aria-label="Block distance reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="pusherDistance" aria-pressed="true">Pusher distance</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="0.5882352941" data-reward-weight="pusherDistance" aria-label="Pusher distance reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="orientation" aria-pressed="true">Orientation</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="1" data-reward-weight="orientation" aria-label="Orientation reward weight" /></label>
+                </div>
               </div>
             </div>
 
             <div class="reward-shaping-setting reward-component-setting">
               <p class="control-label">Reward components</p>
-              <div class="reward-toggle-grid" role="group" aria-label="Reward components">
-                <button class="mode-toggle" type="button" data-reward-shaping="completion" aria-pressed="true">Completion +1</button>
-                <button class="mode-toggle" type="button" data-reward-shaping="closeness" aria-pressed="true">Final closeness</button>
-                <button class="mode-toggle" type="button" data-reward-shaping="pusherWall" aria-pressed="false">Pusher wall −1 · end</button>
-                <button class="mode-toggle" type="button" data-reward-shaping="blockWall" aria-pressed="false">Block wall −10 · end</button>
-                <button class="mode-toggle" type="button" data-reward-shaping="inactivity" aria-pressed="true">No movement −1</button>
-                <button class="mode-toggle" type="button" data-reward-shaping="stepPenalty" aria-pressed="true">Every step −0.01</button>
+              <div class="reward-control-list" role="group" aria-label="Reward components">
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="completion" aria-pressed="true">Completion +1</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="1" data-reward-weight="completion" aria-label="Completion reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="closeness" aria-pressed="true">Final coverage</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="1" data-reward-weight="closeness" aria-label="Final coverage reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="pusherWall" aria-pressed="false">Pusher wall −1 · end</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-1" data-reward-weight="pusherWall" aria-label="Pusher wall reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="blockWall" aria-pressed="false">Block wall −10 · end</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-10" data-reward-weight="blockWall" aria-label="Block wall reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="inactivity" aria-pressed="true">No movement −1</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-1" data-reward-weight="inactivity" aria-label="No movement reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="stepPenalty" aria-pressed="true">Every step −0.01</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-0.01" data-reward-weight="stepPenalty" aria-label="Every-step reward weight" /></label>
+                </div>
               </div>
             </div>
 
