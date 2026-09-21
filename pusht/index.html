@@ -53,7 +53,7 @@
             <div class="card-heading">
               <div>
                 <p class="label">Quasi-static contact</p>
-                <h2 id="modeHeading">Scripted expert</h2>
+                <h2 id="modeHeading">PPO expert</h2>
               </div>
               <div class="phase-pill"><span></span><span id="phaseLabel">Idle</span></div>
             </div>
@@ -127,15 +127,6 @@
               </div>
             </div>
 
-            <div class="solver-setting">
-              <span>Orbit tie-break</span>
-              <div class="step-options" role="group" aria-label="Expert orbit tie-break">
-                <button type="button" data-tie="random" aria-pressed="true">Random</button>
-                <button type="button" data-tie="cw" aria-pressed="false">CW</button>
-                <button type="button" data-tie="ccw" aria-pressed="false">CCW</button>
-              </div>
-            </div>
-
             <p class="label demos-label">Policy</p>
 
             <div class="button-row">
@@ -198,7 +189,7 @@
             </div>
 
             <p class="note" id="statusNote">
-              Collect demonstrations from the expert or record them by hand, then train a flow-matching
+              Collect demonstrations from the saved PPO expert or record them by hand, then train a flow-matching
               policy on them — in this browser, in a background worker. The policy is small and trains for
               seconds, so it is far from the expert; it is here to be watched, not to win.
             </p>

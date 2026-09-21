@@ -1,6 +1,7 @@
 import "./style.css";
 import { PushWorld, createRandom, SUCCESS_COVERAGE } from "./sim.js";
-import { ScriptedExpert } from "./expert.js";
+import ppoExpertCheckpoint from "./ppo-expert.json";
+import { SavedPPOExpert } from "./ppo-expert.js";
 import { DemoStore } from "./demos.js";
 import { createView } from "./render.js";
 import { makePolicy, createFlowSampler, ACTION_DIM, CHUNK } from "./policy.js";
@@ -8,6 +9,7 @@ import { MLP } from "../flow/mlp.js";
 import { savePolicy, loadPolicy, clearPolicy } from "./policy-cache.js";
 
 const EPISODE_CAP = 2200;
+const PPO_EXPERT_EPISODE_CAP = ppoExpertCheckpoint.horizon ?? 200;
 // Keep the obstacle affordance visible while the policy is brought up on the
 // simplest version of the task, but make every world/data path obey one value.
 const OBSTACLE_COUNT = 0;
@@ -15,10 +17,9 @@ const OBSTACLE_COUNT = 0;
 // The expert's fixed diagonal task normally finishes well within 600 steps,
 // leaving ample room while ending a failure in seconds.
 const POLICY_EPISODE_CAP = 600;
-// Attempts allowed per collection slot before giving up on it. The expert
-// solves 92-100% depending on obstacle count, so six consecutive failures is
-// vanishingly unlikely and the bound only exists to stop a pathological loop.
-const COLLECT_ATTEMPTS = 6;
+// The committed policy is deterministic and the zero-obstacle start is fixed,
+// so retrying a failed collection slot would replay the same trajectory.
+const COLLECT_ATTEMPTS = 1;
 const TRAIL_LENGTH = 220;
 const EXECUTE = 16;
 // The raw lift sign is wrong often enough that an isolated flip would send the
@@ -36,7 +37,7 @@ const $ = (selector) => document.querySelector(selector);
 
 const random = createRandom(Date.now() >>> 0);
 const world = new PushWorld({ random, obstacleCount: OBSTACLE_COUNT });
-const expert = new ScriptedExpert({ random });
+const expert = new SavedPPOExpert(ppoExpertCheckpoint);
 const store = new DemoStore().restore();
 const view = createView($("#arena"));
 
@@ -97,7 +98,7 @@ function beginRecording() {
   state.trail = [];
   state.lastAction = null;
   state.finished = null;
-  store.begin(world, state.mode === "teleop" ? "mouse" : "scripted");
+  store.begin(world, state.mode === "teleop" ? "mouse" : "ppo");
   state.recording = true;
   state.running = true;
   syncUI();
@@ -199,7 +200,9 @@ function advance() {
   state.trail.push([world.pusher.x, world.pusher.y]);
   if (state.trail.length > TRAIL_LENGTH) state.trail.shift();
 
-  const cap = state.mode === "policy" ? POLICY_EPISODE_CAP : EPISODE_CAP;
+  const cap = state.mode === "policy"
+    ? POLICY_EPISODE_CAP
+    : state.mode === "expert" ? PPO_EXPERT_EPISODE_CAP : EPISODE_CAP;
   if (world.coverage() >= SUCCESS_COVERAGE || world.steps >= cap) {
     const solved = world.coverage() >= SUCCESS_COVERAGE;
     state.finished = solved ? "solved" : "timeout";
@@ -214,16 +217,14 @@ function advance() {
   }
 }
 
-// Batch collection runs the expert without rendering: at roughly 70k steps per
-// second a ten-episode set costs a few tens of milliseconds, so it can be done
-// synchronously without blocking the frame budget in any visible way.
+// Batch collection runs the saved PPO expert without rendering.
 // Collects `count` solved episodes, resampling any the expert fails rather than
 // storing them. A failed episode runs to the step cap doing nothing useful, so
 // it is both the longest episode and the least worth learning from; keeping
 // them once meant a quarter of the training transitions were the expert stuck.
 // Training filters failures anyway, so collecting them just wasted the slot.
 function collect(count) {
-  const collector = new ScriptedExpert({ random, tieBreak: expert.tieBreak });
+  const collector = new SavedPPOExpert(ppoExpertCheckpoint);
   let kept = 0;
   let resampled = 0;
   let abandoned = 0;
@@ -233,8 +234,8 @@ function collect(count) {
     for (let attempt = 0; attempt < COLLECT_ATTEMPTS && !stored; attempt++) {
       world.reset({ obstacleCount: OBSTACLE_COUNT });
       collector.reset();
-      store.begin(world, "scripted");
-      for (let step = 0; step < EPISODE_CAP; step++) {
+      store.begin(world, "ppo");
+      for (let step = 0; step < PPO_EXPERT_EPISODE_CAP; step++) {
         if (world.coverage() >= SUCCESS_COVERAGE) break;
         const observation = world.writeObservation();
         const [actionX, actionY, lift] = collector.act(world);
@@ -437,7 +438,7 @@ function syncUI() {
   $("#transitionMetric").textContent = stats.steps.toLocaleString();
 
   $("#modeHeading").textContent =
-    state.mode === "teleop" ? "Mouse teleoperation" : state.mode === "policy" ? "Learned policy" : "Scripted expert";
+    state.mode === "teleop" ? "Mouse teleoperation" : state.mode === "policy" ? "Learned policy" : "PPO expert";
   $("#runButton").textContent = state.running ? "Pause" : "Run";
   $("#recordButton").textContent = state.recording ? "Stop" : "Record";
   $("#recordButton").dataset.active = String(state.recording);
@@ -528,7 +529,7 @@ $("#recordButton").addEventListener("click", () => {
     setStatus(
       state.mode === "teleop"
         ? "Recording: steer the pusher with the cursor. Press Stop or solve the task to save."
-        : "Recording the scripted expert.",
+        : "Recording the saved PPO expert.",
     );
   }
 });
@@ -572,15 +573,6 @@ for (const button of document.querySelectorAll("[data-speed]")) {
   button.addEventListener("click", () => {
     state.speed = Number(button.dataset.speed);
     for (const other of document.querySelectorAll("[data-speed]")) {
-      other.setAttribute("aria-pressed", String(other === button));
-    }
-  });
-}
-
-for (const button of document.querySelectorAll("[data-tie]")) {
-  button.addEventListener("click", () => {
-    expert.tieBreak = button.dataset.tie;
-    for (const other of document.querySelectorAll("[data-tie]")) {
       other.setAttribute("aria-pressed", String(other === button));
     }
   });

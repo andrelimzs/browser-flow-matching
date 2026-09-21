@@ -5,9 +5,10 @@
 // array without re-walking object graphs.
 
 const STORAGE_KEY = "pusht-demos-v1";
-// Version 7 is the no-lift, zero-degree task with no orient-first phase. Earlier
-// no-lift demonstrations still contain rotate-translate-rotate trajectories.
-const VERSION = 7;
+// Version 8 switches expert demonstrations from the scripted controller to the
+// saved PPO policy. Older episodes have a materially different action
+// distribution and should not silently mix into the Flow BC training set.
+const VERSION = 8;
 
 // World coordinates live in [0, 1] and the pusher moves 0.017 per step, so four
 // decimals is far finer than the simulation can distinguish. Full float
