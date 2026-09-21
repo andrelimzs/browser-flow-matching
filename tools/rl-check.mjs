@@ -504,7 +504,8 @@ console.log("GAE: interleaved environments, terminal trace cut, and final bootst
 // are not expected to solve the task in a few hundred interactions.
 let ppoCheckpoints = 0;
 let ppoTrainReturn = null;
-const ppo = trainPPO({
+let ppoYields = 0;
+const ppo = await trainPPO({
   env: new PushTRLEnv({ seed: 20, horizon: 80 }),
   random: createRandom(21),
   totalSteps: 256,
@@ -513,6 +514,9 @@ const ppo = trainPPO({
   batchSize: 32,
   width: 16,
   progressEvery: 200,
+  async yieldControl() {
+    ppoYields += 1;
+  },
   onCheckpoint(progress) {
     if (progress.steps !== 200) throw new Error(`unexpected PPO checkpoint ${progress.steps}`);
     if (!Number.isFinite(progress.trainReturn) || progress.trainEpisodes < 1) {
@@ -525,6 +529,7 @@ const ppo = trainPPO({
 console.log(`PPO smoke: ${ppo.steps} steps, finite ${finiteModel(ppo.actor) && finiteModel(ppo.critic)}`);
 if (!finiteModel(ppo.actor) || !finiteModel(ppo.critic)) throw new Error("PPO produced non-finite parameters");
 if (ppoCheckpoints !== 1) throw new Error(`expected one PPO checkpoint, got ${ppoCheckpoints}`);
+if (ppoYields !== 1) throw new Error(`expected one PPO control yield, got ${ppoYields}`);
 if (!Number.isFinite(ppoTrainReturn)) throw new Error("PPO training return was not finite");
 if (ppo.actor.actionSquash !== "clip" || ppo.actor.logStd.length !== 2) {
   throw new Error("PPO actor is not an unsquashed Normal with global log standard deviation");
@@ -593,7 +598,8 @@ if (drGRPOLossScale(240, 4, 80) !== 0.75 || drGRPOLossScale(320, 4, 80) !== 1) {
 let drgrpoCheckpoints = 0;
 let drgrpoGroupPaths = 0;
 let drgrpoGroupAdvantages = 0;
-const drgrpo = trainDrGRPO({
+let drgrpoYields = 0;
+const drgrpo = await trainDrGRPO({
   envs: Array.from({ length: 4 }, () => new PushTRLEnv({ seed: 30, horizon: 80 })),
   random: createRandom(31),
   totalSteps: 256,
@@ -601,6 +607,9 @@ const drgrpo = trainDrGRPO({
   groupSize: 4,
   epochs: 1,
   progressEvery: 200,
+  async yieldControl() {
+    drgrpoYields += 1;
+  },
   width: 16,
   onCheckpoint(progress, models) {
     if (progress.steps !== 200) throw new Error(`unexpected Dr.GRPO checkpoint ${progress.steps}`);
@@ -618,6 +627,7 @@ const drgrpo = trainDrGRPO({
 console.log(`Dr.GRPO smoke: ${drgrpo.steps} steps, finite ${finiteModel(drgrpo.actor)}`);
 if (!finiteModel(drgrpo.actor)) throw new Error("Dr.GRPO produced non-finite parameters");
 if (drgrpoCheckpoints !== 1) throw new Error(`expected one Dr.GRPO checkpoint, got ${drgrpoCheckpoints}`);
+if (drgrpoYields !== 1) throw new Error(`expected one Dr.GRPO control yield, got ${drgrpoYields}`);
 if (drgrpoGroupPaths !== 4) throw new Error("Dr.GRPO rollout group was not exposed to the viewer");
 if (drgrpoGroupAdvantages !== 4) throw new Error("Dr.GRPO rollout advantages were not exposed to the viewer");
 if (drgrpo.actor.actionSquash !== "clip" || drgrpo.actor.logStd.length !== 2) {

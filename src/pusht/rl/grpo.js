@@ -34,7 +34,7 @@ export function drGRPOLossScale(transitionCount, groupCount, maximumHorizon) {
   return transitionCount / (groupCount * maximumHorizon);
 }
 
-export function trainDrGRPO({
+export async function trainDrGRPO({
   env,
   envs,
   random,
@@ -50,6 +50,7 @@ export function trainDrGRPO({
   progressEvery = 0,
   onCheckpoint = () => {},
   onProgress = () => {},
+  yieldControl = null,
 } = {}) {
   const environments = envs ?? (env ? [env] : []);
   if (environments.length < 2) throw new Error("Dr.GRPO needs at least two matched environments");
@@ -227,6 +228,7 @@ export function trainDrGRPO({
         groupAdvantages: Array.from(groupAdvantages.subarray(0, groupCount)),
       });
       nextCheckpoint += progressEvery;
+      if (yieldControl) await yieldControl();
     }
     onProgress(progress, { actor });
   }

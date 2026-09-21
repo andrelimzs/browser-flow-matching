@@ -44,7 +44,7 @@ console.log(
   `seed ${seed} · horizon ${horizon} · width ${width} · curriculum ${curriculum ? "on" : "off"} · steps ${totalSteps.toLocaleString()}`,
 );
 
-const result = algorithm === "ppo"
+const result = await (algorithm === "ppo"
   ? trainPPO({ env, random, totalSteps, width, onProgress })
   : trainDrGRPO({
       envs: Array.from({ length: DEFAULT_DRGRPO_GROUP_SIZE }, () => new PushTRLEnv({
@@ -57,7 +57,7 @@ const result = algorithm === "ppo"
       width,
       groupSize: DEFAULT_DRGRPO_GROUP_SIZE,
       onProgress,
-    });
+    }));
 
 env.setTrainingProgress(1);
 const evaluation = evaluatePolicy(result.actor, env, 10);

@@ -42,6 +42,7 @@ const state = {
   budget: 1_000_000,
   horizon: 200,
   curriculum: true,
+  stochasticEval: false,
   rewardShaping: {
     completion: true,
     blockDistance: true,
@@ -148,6 +149,10 @@ function updateWidthControl() {
       String(Number(button.dataset.width) === state.widthByAlgorithm[state.algorithm]),
     );
   });
+}
+
+function updateStochasticEvalControl() {
+  $("#stochasticEvalToggle").setAttribute("aria-pressed", String(state.stochasticEval));
 }
 
 function drawReturnChart() {
@@ -354,6 +359,7 @@ function selectRollout(index) {
   state.frame = 0;
   state.lastFrameAt = 0;
   const rollout = state.rollouts[state.selected];
+  const evaluationMode = rollout.stochasticEvaluation ? "Stochastic eval" : "Deterministic eval";
   $("#rolloutSlider").value = String(state.selected);
   $("#rolloutStepOutput").textContent = `step ${rollout.step.toLocaleString()}`;
   $("#selectedStep").textContent = rollout.step.toLocaleString();
@@ -369,13 +375,13 @@ function selectRollout(index) {
           ? "No movement"
           : "Timed out";
   $("#rolloutReturnLabel").textContent =
-    `eval mean ${formatReturn(rollout.return)} · path ${formatReturn(rollout.representativeReturn)}`;
+    `${evaluationMode.toLowerCase()} mean ${formatReturn(rollout.return)} · path ${formatReturn(rollout.representativeReturn)}`;
   $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
   $("#rolloutPill").dataset.active = "record";
   const peerLabel = `${rollout.evaluationPaths.length} faded eval paths`;
   $("#canvasPathLabel").textContent = rollout.groupPaths.length
-    ? `Representative eval path · ${peerLabel} · ${rollout.groupPaths.length} GRPO paths`
-    : `Representative eval path · ${peerLabel} · action μ / 1σ radar`;
+    ? `${evaluationMode} path · ${peerLabel} · ${rollout.groupPaths.length} GRPO paths`
+    : `${evaluationMode} path · ${peerLabel} · action μ / 1σ radar`;
   $("#advantageLegend").hidden = !rollout.groupPaths.length;
   $("#valueLegendItem").hidden = !rollout.hasValueEstimate;
   $("#valueLegend").textContent = "V(s)";
@@ -398,6 +404,7 @@ function addRollout(message) {
     return: message.return,
     representativeReturn: message.representativeReturn,
     evaluationRollouts: message.evaluationRollouts,
+    stochasticEvaluation: Boolean(message.stochasticEvaluation),
     trainReturn: Number.isFinite(message.trainReturn) ? message.trainReturn : null,
     success: message.success,
     wallContact: message.wallContact,
@@ -450,7 +457,7 @@ function resetRun() {
   $("#selectedCoverage").textContent = "—";
   $("#selectedOutcome").textContent = "—";
   $("#rolloutReturnLabel").textContent = "eval mean — · path —";
-  $("#canvasPathLabel").textContent = "Representative eval path · action μ / 1σ radar";
+  $("#canvasPathLabel").textContent = `${state.stochasticEval ? "Stochastic" : "Deterministic"} eval path · action μ / 1σ radar`;
   $("#advantageLegend").hidden = true;
   $("#valueLegendItem").hidden = false;
   $("#valueLegend").textContent = "V(s)";
@@ -509,6 +516,7 @@ function startTraining() {
     curriculum: state.curriculum,
     rewardShaping: { ...state.rewardShaping },
     rewardWeights: { ...state.rewardWeights },
+    stochasticEval: state.stochasticEval,
     seed: state.seed,
   });
 }
@@ -615,6 +623,7 @@ function registerWebMcpTools() {
         width: { type: "integer", enum: [64, 128, 256] },
         entropyBonus: { type: "number", minimum: 0, maximum: 0.5 },
         curriculum: { type: "boolean" },
+        stochasticEval: { type: "boolean" },
         rewardShaping: {
           type: "object",
           properties: {
@@ -679,6 +688,7 @@ function registerWebMcpTools() {
       state.widthByAlgorithm[state.algorithm] = input.width;
       state.entropyByAlgorithm[state.algorithm] = input.entropyBonus;
       state.curriculum = input.curriculum;
+      if (typeof input.stochasticEval === "boolean") state.stochasticEval = input.stochasticEval;
       state.rewardShaping = { ...input.rewardShaping };
       state.rewardWeights = { ...input.rewardWeights };
       document.querySelectorAll("[data-algorithm]").forEach((button) => {
@@ -691,6 +701,7 @@ function registerWebMcpTools() {
       $("#horizonOutput").textContent = state.horizon.toLocaleString();
       updateEntropyControl();
       updateCurriculumControl();
+      updateStochasticEvalControl();
       updateRewardShapingControls();
       startTraining();
       return {
@@ -698,6 +709,7 @@ function registerWebMcpTools() {
         algorithm: state.algorithm,
         budget: state.budget,
         curriculum: state.curriculum,
+        stochasticEval: state.stochasticEval,
         rewardShaping: { ...state.rewardShaping },
         rewardWeights: { ...state.rewardWeights },
       };
@@ -720,6 +732,7 @@ function registerWebMcpTools() {
         width: state.widthByAlgorithm[state.algorithm],
         entropyBonus: state.entropyByAlgorithm[state.algorithm],
         curriculum: state.curriculum,
+        stochasticEval: state.stochasticEval,
         rewardShaping: { ...state.rewardShaping },
         rewardWeights: { ...state.rewardWeights },
         loggedRollouts: state.rollouts.length,
@@ -788,6 +801,15 @@ $("#curriculumToggle").addEventListener("click", () => {
   updateCurriculumControl();
 });
 
+$("#stochasticEvalToggle").addEventListener("click", () => {
+  state.stochasticEval = !state.stochasticEval;
+  updateStochasticEvalControl();
+  state.worker?.postMessage({
+    type: "set-evaluation-mode",
+    stochastic: state.stochasticEval,
+  });
+});
+
 document.querySelectorAll("[data-reward-shaping]").forEach((button) => {
   button.addEventListener("click", () => {
     const term = button.dataset.rewardShaping;
@@ -837,6 +859,7 @@ window.addEventListener("beforeunload", () => {
 updateEntropyControl();
 updateWidthControl();
 updateCurriculumControl();
+updateStochasticEvalControl();
 updateRewardShapingControls();
 resetRun();
 requestAnimationFrame(draw);

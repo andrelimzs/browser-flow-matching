@@ -5,11 +5,35 @@ import { DEFAULT_DRGRPO_GROUP_SIZE, trainDrGRPO } from "./rl/grpo.js";
 import { trainPPO } from "./rl/ppo.js";
 
 const EVALUATION_ROLLOUTS = 10;
+let stochasticEvaluation = false;
+let training = false;
 
-self.onmessage = ({ data }) => {
+const yieldToMessages = () => self.scheduler?.yield
+  ? self.scheduler.yield()
+  : new Promise((resolve) => setTimeout(resolve, 0));
+
+self.onmessage = async ({ data }) => {
+  if (data.type === "set-evaluation-mode") {
+    stochasticEvaluation = Boolean(data.stochastic);
+    return;
+  }
   if (data.type !== "start") return;
+  if (training) return;
+  training = true;
 
-  const { algorithm, totalSteps, width, horizon, entropyBonus, curriculum, rewardShaping, rewardWeights, seed } = data;
+  const {
+    algorithm,
+    totalSteps,
+    width,
+    horizon,
+    entropyBonus,
+    curriculum,
+    rewardShaping,
+    rewardWeights,
+    seed,
+    stochasticEval,
+  } = data;
+  stochasticEvaluation = Boolean(stochasticEval);
   const env = new PushTRLEnv({ seed, horizon, curriculum, rewardShaping, rewardWeights });
   const random = createRandom(seed + 20_000);
   let lastLoggedGroup = null;
@@ -34,7 +58,7 @@ self.onmessage = ({ data }) => {
       evaluationEnv.setTrainingProgress(progress.steps / totalSteps);
       const rollout = recordPolicyRollout(models.actor, evaluationEnv, {
         random: createRandom(seed + 30_000 + episode),
-        deterministic: true,
+        deterministic: !stochasticEvaluation,
         estimateValue,
       });
       evaluationRollouts.push(rollout);
@@ -62,6 +86,7 @@ self.onmessage = ({ data }) => {
       type: "rollout",
       progress,
       step: progress.steps,
+      stochasticEvaluation,
       evaluationRollouts: EVALUATION_ROLLOUTS,
       representativeReturn: rollout.return,
       trainReturn: progress.trainReturn ?? progress.groupReturnMean ?? null,
@@ -91,7 +116,7 @@ self.onmessage = ({ data }) => {
         rewardShaping,
         rewardWeights,
       }));
-      trainDrGRPO({
+      await trainDrGRPO({
         envs,
         totalSteps,
         width,
@@ -101,9 +126,10 @@ self.onmessage = ({ data }) => {
         progressEvery: 200,
         random,
         onCheckpoint: logRollout,
+        yieldControl: yieldToMessages,
       });
     } else {
-      trainPPO({
+      await trainPPO({
         env,
         totalSteps,
         width,
@@ -113,10 +139,13 @@ self.onmessage = ({ data }) => {
         progressEvery: 200,
         random,
         onCheckpoint: logRollout,
+        yieldControl: yieldToMessages,
       });
     }
     self.postMessage({ type: "done" });
   } catch (error) {
     self.postMessage({ type: "error", message: error instanceof Error ? error.message : String(error) });
+  } finally {
+    training = false;
   }
 };

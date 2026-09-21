@@ -55,7 +55,7 @@
               </div>
               <div class="rollout-empty" id="rolloutEmpty">
                 <strong>No rollouts logged yet</strong>
-                <span>Start training to capture a deterministic rollout every 200 steps.</span>
+                <span>Start training to capture an evaluation rollout every 200 steps.</span>
               </div>
             </div>
 
@@ -94,6 +94,11 @@
               <div class="metric"><span>Completions</span><strong id="successMetric">0</strong></div>
               <div class="metric"><span>Logged rollouts</span><strong id="rolloutMetric">0</strong></div>
             </div>
+
+            <div class="eval-mode-control">
+              <span>Evaluation policy</span>
+              <button id="stochasticEvalToggle" class="mode-toggle" type="button" aria-pressed="false">Stochastic eval</button>
+            </div>
           </article>
 
           <aside class="training-card rl-controls">
@@ -114,7 +119,7 @@
                 <span><i class="evaluation-return-swatch"></i><b>Eval mean · SMA 10</b></span>
                 <span><i class="training-return-swatch"></i><b>Train mean · SMA 10</b></span>
               </div>
-              <canvas id="returnCanvas" aria-label="Ten-point simple moving averages of deterministic evaluation and mean training episode returns"></canvas>
+              <canvas id="returnCanvas" aria-label="Ten-point simple moving averages of evaluation and mean training episode returns"></canvas>
             </div>
 
             <p class="control-label">Algorithm</p>

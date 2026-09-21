@@ -46,7 +46,7 @@ export function computeGAE({
   return { advantages, returns };
 }
 
-export function trainPPO({
+export async function trainPPO({
   env,
   envs,
   random,
@@ -66,6 +66,7 @@ export function trainPPO({
   progressEvery = 0,
   onCheckpoint = () => {},
   onProgress = () => {},
+  yieldControl = null,
 } = {}) {
   const environments = envs ?? (env ? [env] : []);
   if (!environments.length) throw new Error("PPO needs at least one environment");
@@ -178,6 +179,7 @@ export function trainPPO({
         checkpointReturnSum = 0;
         checkpointEpisodes = 0;
         nextCheckpoint += progressEvery;
+        if (yieldControl) await yieldControl();
       }
     }
 
