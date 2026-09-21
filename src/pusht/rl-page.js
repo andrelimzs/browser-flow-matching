@@ -98,6 +98,12 @@ function formatBudget(value) {
   return `${Math.round(value / 1000)}k`;
 }
 
+function formatStepTick(value) {
+  if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))}M`;
+  if (value >= 1000) return `${Number((value / 1000).toFixed(1))}k`;
+  return value.toLocaleString();
+}
+
 function formatRewardWeight(value) {
   return String(Number(value.toFixed(4)));
 }
@@ -151,6 +157,27 @@ function updateWidthControl() {
 
 function updateDeterministicEvalControl() {
   $("#deterministicEvalToggle").setAttribute("aria-pressed", String(state.deterministicEval));
+}
+
+function drawTrainingStepTicks(context, x, plotBottom, canvasHeight) {
+  const count = Math.min(5, state.rollouts.length);
+  const indices = count <= 1
+    ? [0]
+    : [...new Set(Array.from({ length: count }, (_, tick) =>
+        Math.round(tick * (state.rollouts.length - 1) / (count - 1))))];
+  context.font = '8px "DM Mono", monospace';
+  context.fillStyle = "#8a8f89";
+  context.strokeStyle = "rgba(25, 28, 27, .24)";
+  context.lineWidth = 1;
+  indices.forEach((index, position) => {
+    const tickX = x(index);
+    context.beginPath();
+    context.moveTo(tickX, plotBottom);
+    context.lineTo(tickX, plotBottom + 4);
+    context.stroke();
+    context.textAlign = position === 0 ? "left" : position === indices.length - 1 ? "right" : "center";
+    context.fillText(formatStepTick(state.rollouts[index].step), tickX, canvasHeight - 7);
+  });
 }
 
 function drawReturnChart() {
@@ -235,10 +262,12 @@ function drawReturnChart() {
       context.fill();
     }
   }
-  context.fillStyle = "#8a8f89";
-  context.font = '9px "DM Mono", monospace';
-  context.textAlign = "center";
-  context.fillText("training step", rect.width / 2, rect.height - 7);
+  drawTrainingStepTicks(
+    context,
+    x,
+    rect.height - padding.bottom,
+    rect.height,
+  );
 }
 
 function drawEvaluationMetricsChart() {
@@ -316,10 +345,7 @@ function drawEvaluationMetricsChart() {
     context.fillStyle = "#8a5ac2";
     context.fill();
   }
-  context.fillStyle = "#8a8f89";
-  context.font = '9px "DM Mono", monospace';
-  context.textAlign = "center";
-  context.fillText("training step", rect.width / 2, rect.height - 7);
+  drawTrainingStepTicks(context, x, padding.top + plotHeight, rect.height);
 }
 
 function drawRolloutValueChart() {
