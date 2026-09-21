@@ -6,10 +6,10 @@
 // the demonstrations.
 
 const STORAGE_KEY = "pusht-policy-v1";
-// Version 2 changed xy chunks to first-difference actions, version 3 fixed the
-// task distribution, and version 4 adopts the smooth expert target convention.
-// Earlier weights are therefore not a valid cached policy for the current data.
-const VERSION = 4;
+// Version 2 changed xy chunks to deltas, version 3 fixed the task distribution,
+// version 4 adopted smooth targets, and version 5 adopts the staged expert.
+// Earlier weights are not a valid cached policy for the current data.
+const VERSION = 5;
 
 function toBase64(values) {
   const bytes = new Uint8Array(values.buffer, values.byteOffset, values.byteLength);

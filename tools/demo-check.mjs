@@ -81,11 +81,11 @@ for (let row = 0; row < mixedSet.count; row++) {
 console.log("  all-zero rows (0 = no padding corruption):", padded);
 
 // Malformed stored data must not take the page down on first render.
-window.localStorage.setItem("pusht-demos-v1", JSON.stringify({ version: 3, episodes: [{ source: "mouse" }, null, 7] }));
+window.localStorage.setItem("pusht-demos-v1", JSON.stringify({ version: 4, episodes: [{ source: "mouse" }, null, 7] }));
 const salvaged = new DemoStore().restore();
 console.log("  malformed storage dropped:", salvaged.episodes.length === 0, "and stats() survives:",
   (() => { try { salvaged.stats(); return true; } catch { return false; } })());
 
 // JSON payload size, since this is what a user downloads.
-const bytes = JSON.stringify({ version: 3, episodes: store.episodes }).length;
+const bytes = JSON.stringify({ version: 4, episodes: store.episodes }).length;
 console.log(`export size ${(bytes / 1024).toFixed(0)} KB for ${stats.steps} transitions (${(bytes / stats.steps).toFixed(0)} B/transition)`);

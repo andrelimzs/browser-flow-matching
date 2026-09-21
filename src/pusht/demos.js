@@ -5,10 +5,10 @@
 // array without re-walking object graphs.
 
 const STORAGE_KEY = "pusht-demos-v1";
-// Version 2 fixed the task distribution; version 3 switches the expert from
-// distant, discontinuous targets to acceleration-limited waypoints. Mixing the
-// old commands back in would undo the smoother policy target distribution.
-const VERSION = 3;
+// Version 2 fixed the task distribution, version 3 added smooth waypoints, and
+// version 4 makes the zero-obstacle expert follow a fixed orient/push/align
+// curriculum. Older commands would blur that deliberately simple structure.
+const VERSION = 4;
 
 // World coordinates live in [0, 1] and the pusher moves 0.017 per step, so four
 // decimals is far finer than the simulation can distinguish. Full float

@@ -49,6 +49,8 @@ const SAMPLES_PER_UNIT = 90;
 // jumping the command between distant contact targets. The simulator already
 // caps speed; bounding acceleration here also makes the demonstrations smooth.
 const MAX_TARGET_ACCELERATION = 0.0035;
+const ORIENT_DONE = 0.14;
+const TRANSLATE_DONE = 0.1;
 
 const probe = { depth: 0, nx: 0, ny: 0, px: 0, py: 0 };
 const scratch = { x: 0, y: 0 };
@@ -56,6 +58,12 @@ const scratch = { x: 0, y: 0 };
 // Candidate contacts live in the block's local frame, so they are computed once
 // and reused for every episode.
 const CANDIDATES = buildCandidates();
+// Centred contact on the broad crossbar. With the pointed stem aimed toward the
+// goal, this is the stable trailing face for the entire translation phase.
+const CROSSBAR_CONTACT = (() => {
+  const y = TEE.parts[0].maxY;
+  return { x: 0, y, nx: 0, ny: 1, pusherX: 0, pusherY: y + PUSHER_RADIUS + APPROACH_GAP };
+})();
 
 function buildCandidates() {
   const candidates = [];
@@ -119,6 +127,10 @@ export class ScriptedExpert {
     this.approachSteps = 0;
     this.bestCoverage = 0;
     this.stalled = 0;
+    this.phase = "orient";
+    this.transitAngle = null;
+    this.orientAnchor = null;
+    this.correctTransit = false;
     this.targetVelocityX = 0;
     this.targetVelocityY = 0;
   }
@@ -370,12 +382,50 @@ export class ScriptedExpert {
     const errorAngle = wrapAngle(world.goal.angle - block.angle);
     const scale = Math.sqrt(TEE.characteristicSquared);
 
-    // Orientation only matters once the block is close to the end of its route.
+    // With no obstacles, use a fixed curriculum instead of continuously
+    // trading translation against rotation. First turn the tee so its centred
+    // top/bottom face can drive directly toward the goal with little torque,
+    // then translate, then turn into the requested final pose.
+    if (world.obstacles.length === 0) {
+      const positionError = Math.hypot(errorX, errorY);
+      if (this.transitAngle === null) {
+        const heading = Math.atan2(errorY, errorX);
+        // Local -Y is the tee's pointed stem. Aim it toward the goal so the
+        // broad crossbar is the trailing face available to the pusher.
+        this.transitAngle = wrapAngle(heading + Math.PI / 2);
+        this.orientAnchor = { x: block.x, y: block.y };
+      }
+      const transitError = Math.abs(wrapAngle(this.transitAngle - block.angle));
+      if (this.phase === "translate") {
+        if (this.correctTransit && transitError < 0.1) this.correctTransit = false;
+        else if (!this.correctTransit && transitError > 0.28) this.correctTransit = true;
+      }
+      if (this.phase === "orient" && transitError < ORIENT_DONE) {
+        this.phase = "translate";
+        this.correctTransit = false;
+      }
+      if (this.phase === "translate" && positionError < TRANSLATE_DONE) this.phase = "align";
+    }
+
     const arriving = route.remaining < LOOKAHEAD * 1.5;
     let desiredX = errorX;
     let desiredY = errorY;
-    let desiredSpin =
-      errorAngle * scale * this.rotationWeight * (arriving ? 1 : TRANSIT_ROTATION_SCALE);
+    let desiredSpin;
+    if (world.obstacles.length === 0 && this.phase === "orient") {
+      desiredX = this.orientAnchor.x - block.x;
+      desiredY = this.orientAnchor.y - block.y;
+      desiredSpin = wrapAngle(this.transitAngle - block.angle) * scale * this.rotationWeight * 1.5;
+    } else if (world.obstacles.length === 0 && this.phase === "translate") {
+      desiredSpin = wrapAngle(this.transitAngle - block.angle) * scale * this.rotationWeight;
+    } else if (world.obstacles.length === 0) {
+      // Final turns tend to displace the block, so position correction remains
+      // active while orientation is given extra weight.
+      desiredX *= 1.35;
+      desiredY *= 1.35;
+      desiredSpin = errorAngle * scale * this.rotationWeight * 1.5;
+    } else {
+      desiredSpin = errorAngle * scale * this.rotationWeight * (arriving ? 1 : TRANSIT_ROTATION_SCALE);
+    }
     const desiredLength = Math.hypot(desiredX, desiredY, desiredSpin);
     if (desiredLength < 1e-9) return;
     desiredX /= desiredLength;
@@ -384,7 +434,10 @@ export class ScriptedExpert {
 
     let best = null;
     let bestScore = -Infinity;
-    for (const candidate of CANDIDATES) {
+    const candidates = world.obstacles.length === 0 && this.phase === "translate" && !this.correctTransit
+      ? [CROSSBAR_CONTACT]
+      : CANDIDATES;
+    for (const candidate of candidates) {
       // Push direction is the inward surface normal, rotated into the world.
       const forceX = -(candidate.nx * cos - candidate.ny * sin);
       const forceY = -(candidate.nx * sin + candidate.ny * cos);
@@ -511,7 +564,7 @@ export class ScriptedExpert {
 
   describe() {
     if (!this.contact) return this.state;
-    return this.state === "approach" ? "approach (lifted)" : "push";
+    return this.state === "approach" ? `lift · ${this.phase}` : this.phase;
   }
 }
 
