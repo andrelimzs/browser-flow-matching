@@ -99,6 +99,7 @@ export function trainSAC({
   const rawLogStds = new Float32Array(batchSize * 2);
   const action = new Float32Array(2);
 
+  env.setTrainingProgress?.(0);
   let observation = Float32Array.from(env.reset());
   let episodes = 0;
   let successes = 0;
@@ -124,6 +125,7 @@ export function trainSAC({
     if (transition.done) {
       episodes += 1;
       if (transition.success) { successes += 1; intervalSuccesses += 1; }
+      env.setTrainingProgress?.(step / totalSteps);
       observation = Float32Array.from(env.reset());
     }
 

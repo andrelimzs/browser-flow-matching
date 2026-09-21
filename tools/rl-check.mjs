@@ -1,16 +1,70 @@
 import { MLP } from "../src/flow/mlp.js";
-import { createRandom, MAX_PUSHER_SPEED } from "../src/pusht/sim.js";
+import {
+  createRandom,
+  FIXED_BLOCK_START,
+  FIXED_PUSHER_START,
+  MAX_PUSHER_SPEED,
+} from "../src/pusht/sim.js";
 import { ScriptedExpert } from "../src/pusht/expert.js";
-import { PushTRLEnv, RL_ACTION_SIZE, RL_OBSERVATION_SIZE } from "../src/pusht/rl/env.js";
+import {
+  CURRICULUM_INITIAL_DISTANCE_FRACTION,
+  PushTRLEnv,
+  RL_ACTION_SIZE,
+  RL_OBSERVATION_SIZE,
+} from "../src/pusht/rl/env.js";
 import { recordPolicyRollout } from "../src/pusht/rl/common.js";
 import { trainPPO } from "../src/pusht/rl/ppo.js";
 import { trainSAC } from "../src/pusht/rl/sac.js";
 
 const finiteModel = (model) => model.params.every((buffer) => buffer.every(Number.isFinite));
 
+// The block starts near the goal, moves to the final task radius by 70%, and
+// gets a randomized valid bearing while holding the scheduled radius exact.
+const curriculumEnv = new PushTRLEnv({ seed: 9 });
+const finalDistance = Math.hypot(
+  FIXED_BLOCK_START.x - curriculumEnv.world.goal.x,
+  FIXED_BLOCK_START.y - curriculumEnv.world.goal.y,
+);
+const initialPusherDistance = Math.hypot(
+  FIXED_PUSHER_START.x - FIXED_BLOCK_START.x,
+  FIXED_PUSHER_START.y - FIXED_BLOCK_START.y,
+);
+const curriculumPositions = [];
+const checkCurriculumDistance = (progress, expectedFraction) => {
+  curriculumEnv.setTrainingProgress(progress);
+  curriculumEnv.reset();
+  curriculumPositions.push([curriculumEnv.world.block.x, curriculumEnv.world.block.y]);
+  if (Math.abs(curriculumEnv.blockGoalDistance() - finalDistance * expectedFraction) > 1e-9) {
+    throw new Error(`wrong curriculum distance at progress ${progress}`);
+  }
+  const pusherDistance = Math.hypot(
+    curriculumEnv.world.pusher.x - curriculumEnv.world.block.x,
+    curriculumEnv.world.pusher.y - curriculumEnv.world.block.y,
+  );
+  if (Math.abs(pusherDistance - initialPusherDistance) > 1e-9) {
+    throw new Error(`wrong pusher distance at progress ${progress}`);
+  }
+};
+checkCurriculumDistance(0, CURRICULUM_INITIAL_DISTANCE_FRACTION);
+checkCurriculumDistance(0.35, (1 + CURRICULUM_INITIAL_DISTANCE_FRACTION) / 2);
+checkCurriculumDistance(0.7, 1);
+checkCurriculumDistance(1, 1);
+const distinctBearings = new Set(curriculumPositions.map(([x, y]) =>
+  Math.atan2(y - curriculumEnv.world.goal.y, x - curriculumEnv.world.goal.x).toFixed(6)));
+if (distinctBearings.size < 2) throw new Error("curriculum did not randomize block bearing");
+const noCurriculumEnv = new PushTRLEnv({ seed: 9, curriculum: false });
+noCurriculumEnv.setTrainingProgress(0);
+noCurriculumEnv.reset();
+if (noCurriculumEnv.world.block.x !== FIXED_BLOCK_START.x ||
+    noCurriculumEnv.world.block.y !== FIXED_BLOCK_START.y) {
+  throw new Error("disabled curriculum did not use the final block start");
+}
+console.log("curriculum: randomized bearing and matched pusher gap, near radius at 0%, final radius at 70%");
+
 // Environment contract: position and orientation progress telescope to their
 // net reductions, with exactly one additional reward on completion.
 const env = new PushTRLEnv({ seed: 10, horizon: 2200 });
+env.setTrainingProgress(1);
 let observation = env.reset();
 const initialDistance = env.distance;
 const initialOrientationError = env.orientationError;
@@ -82,7 +136,7 @@ if (Math.abs(closenessTransition.finalClosenessReward - closenessTransition.cove
 
 // Touching any outer wall is an immediate terminal failure with an exact -1
 // reward, regardless of the ordinary distance-shaping term.
-const wallEnv = new PushTRLEnv({ seed: 15, horizon: 100 });
+const wallEnv = new PushTRLEnv({ seed: 15, horizon: 100, curriculum: false });
 wallEnv.reset();
 let wallTransition = null;
 for (let step = 0; step < 20 && !wallTransition?.done; step++) {

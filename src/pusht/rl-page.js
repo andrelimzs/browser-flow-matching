@@ -17,6 +17,7 @@ const state = {
   algorithm: "ppo",
   budget: 100_000,
   horizon: 200,
+  curriculum: true,
   entropyByAlgorithm: { ppo: 0.02, sac: 0.3 },
   widthByAlgorithm: { ppo: 64, sac: 256 },
   seed: 2026,
@@ -41,6 +42,7 @@ function setTraining(active, label = active ? "Training" : "Idle") {
   $("#budgetSlider").disabled = active;
   $("#horizonSlider").disabled = active;
   $("#entropySlider").disabled = active;
+  $("#curriculumToggle").disabled = active;
   document.querySelectorAll("[data-algorithm], [data-width]").forEach((button) => {
     button.disabled = active;
   });
@@ -261,6 +263,7 @@ function startTraining() {
     width: state.widthByAlgorithm[state.algorithm],
     horizon: state.horizon,
     entropyBonus: state.entropyByAlgorithm[state.algorithm],
+    curriculum: state.curriculum,
     seed: state.seed,
   });
 }
@@ -329,8 +332,9 @@ function registerWebMcpTools() {
         horizon: { type: "integer", minimum: 200, maximum: 1000, multipleOf: 100 },
         width: { type: "integer", enum: [64, 128, 256] },
         entropyBonus: { type: "number", minimum: 0, maximum: 0.5 },
+        curriculum: { type: "boolean" },
       },
-      required: ["algorithm", "budget", "horizon", "width", "entropyBonus"],
+      required: ["algorithm", "budget", "horizon", "width", "entropyBonus", "curriculum"],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, untrustedContentHint: false },
@@ -356,6 +360,7 @@ function registerWebMcpTools() {
       state.horizon = input.horizon;
       state.widthByAlgorithm[state.algorithm] = input.width;
       state.entropyByAlgorithm[state.algorithm] = input.entropyBonus;
+      state.curriculum = input.curriculum;
       document.querySelectorAll("[data-algorithm]").forEach((button) => {
         button.setAttribute("aria-pressed", String(button.dataset.algorithm === state.algorithm));
       });
@@ -365,8 +370,14 @@ function registerWebMcpTools() {
       $("#horizonSlider").value = String(state.horizon);
       $("#horizonOutput").textContent = state.horizon.toLocaleString();
       updateEntropyControl();
+      updateCurriculumControl();
       startTraining();
-      return { status: "training", algorithm: state.algorithm, budget: state.budget };
+      return {
+        status: "training",
+        algorithm: state.algorithm,
+        budget: state.budget,
+        curriculum: state.curriculum,
+      };
     },
   });
 
@@ -385,6 +396,7 @@ function registerWebMcpTools() {
         horizon: state.horizon,
         width: state.widthByAlgorithm[state.algorithm],
         entropyBonus: state.entropyByAlgorithm[state.algorithm],
+        curriculum: state.curriculum,
         loggedRollouts: state.rollouts.length,
         latestStep: state.rollouts.at(-1)?.step ?? 0,
         selectedRollout: selected ? {
@@ -431,6 +443,17 @@ document.querySelectorAll("[data-width]").forEach((button) => {
   });
 });
 
+function updateCurriculumControl() {
+  const button = $("#curriculumToggle");
+  button.setAttribute("aria-pressed", String(state.curriculum));
+  button.textContent = state.curriculum ? "Enabled" : "Disabled";
+}
+
+$("#curriculumToggle").addEventListener("click", () => {
+  state.curriculum = !state.curriculum;
+  updateCurriculumControl();
+});
+
 $("#budgetSlider").addEventListener("input", (event) => {
   state.budget = budgetFromExponent(Number(event.target.value));
   $("#budgetOutput").textContent = formatBudget(state.budget);
@@ -458,5 +481,6 @@ window.addEventListener("beforeunload", () => {
 
 updateEntropyControl();
 updateWidthControl();
+updateCurriculumControl();
 resetRun();
 requestAnimationFrame(draw);

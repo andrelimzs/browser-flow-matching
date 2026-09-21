@@ -3,7 +3,7 @@
 //   node tools/rl-train.mjs ppo 100000
 //   node tools/rl-train.mjs sac 100000
 //
-// Optional environment variables: SEED, WIDTH, HORIZON, OUT.
+// Optional environment variables: SEED, WIDTH, HORIZON, CURRICULUM, OUT.
 
 import { writeFileSync } from "node:fs";
 import { createRandom } from "../src/pusht/sim.js";
@@ -17,11 +17,12 @@ const totalSteps = Number(process.argv[3] ?? 100_000);
 const seed = Number(process.env.SEED ?? 2026);
 const width = Number(process.env.WIDTH ?? 128);
 const horizon = Number(process.env.HORIZON ?? 200);
+const curriculum = process.env.CURRICULUM !== "false";
 if (!Number.isInteger(totalSteps) || totalSteps < 1) throw new Error(`invalid total steps: ${process.argv[3]}`);
 if (algorithm !== "ppo" && algorithm !== "sac") throw new Error(`algorithm must be ppo or sac, got ${algorithm}`);
 
 const random = createRandom(seed);
-const env = new PushTRLEnv({ seed: seed + 1, horizon });
+const env = new PushTRLEnv({ seed: seed + 1, horizon, curriculum });
 const started = process.hrtime.bigint();
 
 const onProgress = (progress) => {
@@ -37,13 +38,14 @@ const onProgress = (progress) => {
 
 console.log(
   `${algorithm.toUpperCase()} · single frame (11) · action dx/dy (2) · reward progress + final closeness, completion +1, wall -1\n` +
-  `seed ${seed} · horizon ${horizon} · width ${width} · steps ${totalSteps.toLocaleString()}`,
+  `seed ${seed} · horizon ${horizon} · width ${width} · curriculum ${curriculum ? "on" : "off"} · steps ${totalSteps.toLocaleString()}`,
 );
 
 const result = algorithm === "ppo"
   ? trainPPO({ env, random, totalSteps, width, onProgress })
   : trainSAC({ env, random, totalSteps, width, onProgress });
 
+env.setTrainingProgress(1);
 const evaluation = evaluatePolicy(result.actor, env, 10);
 const elapsed = Number(process.hrtime.bigint() - started) / 1e9;
 console.log(
@@ -62,6 +64,7 @@ if (process.env.OUT) {
     seed,
     totalSteps,
     horizon,
+    curriculum,
     actor: result.actor.toJSON(),
     evaluation,
   }));

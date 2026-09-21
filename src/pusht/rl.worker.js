@@ -7,12 +7,13 @@ import { trainSAC } from "./rl/sac.js";
 self.onmessage = ({ data }) => {
   if (data.type !== "start") return;
 
-  const { algorithm, totalSteps, width, horizon, entropyBonus, seed } = data;
-  const env = new PushTRLEnv({ seed, horizon });
+  const { algorithm, totalSteps, width, horizon, entropyBonus, curriculum, seed } = data;
+  const env = new PushTRLEnv({ seed, horizon, curriculum });
   const random = createRandom(seed + 20_000);
 
   const logRollout = (progress, models) => {
-    const evaluationEnv = new PushTRLEnv({ seed: seed + 10_000, horizon });
+    const evaluationEnv = new PushTRLEnv({ seed: seed + 10_000, horizon, curriculum });
+    evaluationEnv.setTrainingProgress(progress.steps / totalSteps);
     const rollout = recordPolicyRollout(models.actor, evaluationEnv, {
       random: createRandom(seed + 30_000),
       deterministic: true,

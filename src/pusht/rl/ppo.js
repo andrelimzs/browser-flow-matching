@@ -63,6 +63,7 @@ export function trainPPO({
   const nextAdvantages = new Float32Array(environmentCount);
 
   for (let environment = 0; environment < environmentCount; environment++) {
+    environments[environment].setTrainingProgress?.(0);
     currentObservations.set(environments[environment].reset(), environment * RL_OBSERVATION_SIZE);
   }
   let steps = 0;
@@ -111,7 +112,11 @@ export function trainPPO({
         const transition = environments[environment].step(action);
         rewards[index] = transition.reward;
         dones[index] = transition.done ? 1 : 0;
-        const nextObservation = transition.done ? environments[environment].reset() : transition.observation;
+        let nextObservation = transition.observation;
+        if (transition.done) {
+          environments[environment].setTrainingProgress?.((steps + index + 1) / totalSteps);
+          nextObservation = environments[environment].reset();
+        }
         currentObservations.set(nextObservation, observationOffset);
         if (transition.done) {
           episodes += 1;

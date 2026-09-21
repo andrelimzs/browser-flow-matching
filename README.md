@@ -102,6 +102,13 @@ exploration. Both deliberately use the same minimal task definition:
 - reward: progress in block-to-goal center distance plus progress in normalized orientation error, final overlap coverage as a terminal closeness score, `+1` on completion, or `-1` and termination when the pusher touches the outer wall
 - episode horizon: 200 steps by default
 
+With the position curriculum enabled (the browser default), the block begins at 25% of the original
+block-to-goal distance. Each episode randomizes the block's valid in-arena bearing around the goal while
+holding that scheduled distance fixed. The pusher moves with it, directly behind the block relative to
+the goal and at the original block–pusher separation. The radius expands linearly, reaches the original
+full-task distance at 70%, and stays there for the remaining 30%. The browser control can disable the
+curriculum to train on the original fixed start from the first episode.
+
 Training is seeded and runs in Node. Set `OUT=policy.json` to save the actor and its evaluation metadata.
 Position and orientation progress earn positive reward, regress earns the matching negative reward, and
 waiting earns zero. Orientation error is divided by π, bounding its net shaping range to `[-1, 1]`.
