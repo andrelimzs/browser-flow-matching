@@ -63,7 +63,8 @@
 .return-heading > span { color: var(--muted); font-family: "DM Mono", monospace; font-size: 9px; text-transform: uppercase; }
 .return-legend { justify-content: flex-end; margin: -3px 0 8px; }
 #returnCanvas { display: block; width: 100%; height: 150px; border: 1px solid var(--line); background: #f4f2ec; }
-.rl-metrics { margin-top: 18px; }
+.rl-metrics { grid-template-columns: repeat(4, 1fr); margin-top: 18px; }
+.rl-metrics .metric:first-child { grid-column: auto; }
 
 @media (max-width: 1100px) {
   .rl-titlebar { align-items: start; flex-direction: column; gap: 12px; }
@@ -77,4 +78,5 @@
   .page-tab { padding-inline: 8px; }
   .rollout-summary { grid-template-columns: 1fr 1fr; }
   .rollout-scrubber { grid-template-columns: 1fr; gap: 9px; }
+  .rl-metrics { grid-template-columns: 1fr 1fr; }
 }

@@ -87,6 +87,13 @@
               </div>
               <canvas id="valueCanvas" aria-label="Critic value and reward over the selected rollout"></canvas>
             </div>
+
+            <div class="metrics rl-metrics">
+              <div class="metric"><span>Steps</span><strong id="stepsMetric">0</strong></div>
+              <div class="metric"><span>Episodes</span><strong id="episodesMetric">0</strong></div>
+              <div class="metric"><span>Completions</span><strong id="successMetric">0</strong></div>
+              <div class="metric"><span>Logged rollouts</span><strong id="rolloutMetric">0</strong></div>
+            </div>
           </article>
 
           <aside class="training-card rl-controls">
@@ -139,6 +146,50 @@
               <div class="range-ends"><span id="entropyMin">0</span><span id="entropyMax">0.10</span></div>
             </div>
 
+            <div class="solver-setting">
+              <span>Position curriculum</span>
+              <button id="curriculumToggle" class="mode-toggle curriculum-toggle" type="button" aria-pressed="true">Enabled</button>
+            </div>
+
+            <div class="solver-setting">
+              <span>Network width</span>
+              <div class="step-options" role="group" aria-label="Network width">
+                <button type="button" data-width="64" aria-pressed="true">64</button>
+                <button type="button" data-width="128" aria-pressed="false">128</button>
+                <button type="button" data-width="256" aria-pressed="false">256</button>
+              </div>
+            </div>
+
+            <div class="reward-shaping-setting reward-component-setting">
+              <p class="control-label">Reward components</p>
+              <div class="reward-control-list" role="group" aria-label="Reward components">
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="completion" aria-pressed="true">Completion +10</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="10" data-reward-weight="completion" aria-label="Completion reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="closeness" aria-pressed="true">Final coverage ×5</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="5" data-reward-weight="closeness" aria-label="Final coverage reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="inactivity" aria-pressed="true">No movement −1</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-1" data-reward-weight="inactivity" aria-label="No movement reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="stepPenalty" aria-pressed="true">Every step −0.01</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-0.01" data-reward-weight="stepPenalty" aria-label="Every-step reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="pusherWall" aria-pressed="false">Pusher wall −1 · end</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-1" data-reward-weight="pusherWall" aria-label="Pusher wall reward weight" /></label>
+                </div>
+                <div class="reward-control">
+                  <button class="mode-toggle" type="button" data-reward-shaping="blockWall" aria-pressed="false">Block wall −10 · end</button>
+                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-10" data-reward-weight="blockWall" aria-label="Block wall reward weight" /></label>
+                </div>
+              </div>
+            </div>
+
             <div class="reward-shaping-setting">
               <p class="control-label">Reward shaping</p>
               <div class="reward-control-list" role="group" aria-label="Reward shaping terms">
@@ -155,57 +206,6 @@
                   <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="1" data-reward-weight="orientation" aria-label="Orientation reward weight" /></label>
                 </div>
               </div>
-            </div>
-
-            <div class="reward-shaping-setting reward-component-setting">
-              <p class="control-label">Reward components</p>
-              <div class="reward-control-list" role="group" aria-label="Reward components">
-                <div class="reward-control">
-                  <button class="mode-toggle" type="button" data-reward-shaping="completion" aria-pressed="true">Completion +10</button>
-                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="10" data-reward-weight="completion" aria-label="Completion reward weight" /></label>
-                </div>
-                <div class="reward-control">
-                  <button class="mode-toggle" type="button" data-reward-shaping="closeness" aria-pressed="true">Final coverage ×5</button>
-                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="5" data-reward-weight="closeness" aria-label="Final coverage reward weight" /></label>
-                </div>
-                <div class="reward-control">
-                  <button class="mode-toggle" type="button" data-reward-shaping="pusherWall" aria-pressed="false">Pusher wall −1 · end</button>
-                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-1" data-reward-weight="pusherWall" aria-label="Pusher wall reward weight" /></label>
-                </div>
-                <div class="reward-control">
-                  <button class="mode-toggle" type="button" data-reward-shaping="blockWall" aria-pressed="false">Block wall −10 · end</button>
-                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-10" data-reward-weight="blockWall" aria-label="Block wall reward weight" /></label>
-                </div>
-                <div class="reward-control">
-                  <button class="mode-toggle" type="button" data-reward-shaping="inactivity" aria-pressed="true">No movement −1</button>
-                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-1" data-reward-weight="inactivity" aria-label="No movement reward weight" /></label>
-                </div>
-                <div class="reward-control">
-                  <button class="mode-toggle" type="button" data-reward-shaping="stepPenalty" aria-pressed="true">Every step −0.01</button>
-                  <label><span>Weight</span><input type="number" min="-100" max="100" step="any" value="-0.01" data-reward-weight="stepPenalty" aria-label="Every-step reward weight" /></label>
-                </div>
-              </div>
-            </div>
-
-            <div class="solver-setting">
-              <span>Position curriculum</span>
-              <button id="curriculumToggle" class="mode-toggle curriculum-toggle" type="button" aria-pressed="true">Enabled</button>
-            </div>
-
-            <div class="solver-setting">
-              <span>Network width</span>
-              <div class="step-options" role="group" aria-label="Network width">
-                <button type="button" data-width="64" aria-pressed="true">64</button>
-                <button type="button" data-width="128" aria-pressed="false">128</button>
-                <button type="button" data-width="256" aria-pressed="false">256</button>
-              </div>
-            </div>
-
-            <div class="metrics rl-metrics">
-              <div class="metric"><span>Steps</span><strong id="stepsMetric">0</strong></div>
-              <div class="metric"><span>Episodes</span><strong id="episodesMetric">0</strong></div>
-              <div class="metric"><span>Completions</span><strong id="successMetric">0</strong></div>
-              <div class="metric"><span>Logged rollouts</span><strong id="rolloutMetric">0</strong></div>
             </div>
 
             <p class="note" id="statusNote">Training runs in a Web Worker, so controls, charts, and rollout inspection stay responsive.</p>
