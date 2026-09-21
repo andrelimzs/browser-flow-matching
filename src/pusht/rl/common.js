@@ -12,12 +12,117 @@ export function clamp(value, low, high) {
   return Math.max(low, Math.min(high, value));
 }
 
+function orthogonal(values, fanIn, fanOut, gain, random) {
+  values.fill(0);
+  const previousNormSquared = gain * gain;
+  if (fanOut <= fanIn) {
+    for (let row = 0; row < fanOut; row++) {
+      const offset = row * fanIn;
+      for (let column = 0; column < fanIn; column++) values[offset + column] = gaussian(random);
+      for (let previous = 0; previous < row; previous++) {
+        const previousOffset = previous * fanIn;
+        let projection = 0;
+        for (let column = 0; column < fanIn; column++) {
+          projection += values[offset + column] * values[previousOffset + column];
+        }
+        projection /= previousNormSquared;
+        for (let column = 0; column < fanIn; column++) {
+          values[offset + column] -= projection * values[previousOffset + column];
+        }
+      }
+      let norm = 0;
+      for (let column = 0; column < fanIn; column++) norm += values[offset + column] ** 2;
+      const scale = gain / Math.max(1e-12, Math.sqrt(norm));
+      for (let column = 0; column < fanIn; column++) values[offset + column] *= scale;
+    }
+    return values;
+  }
+
+  for (let column = 0; column < fanIn; column++) {
+    for (let row = 0; row < fanOut; row++) values[row * fanIn + column] = gaussian(random);
+    for (let previous = 0; previous < column; previous++) {
+      let projection = 0;
+      for (let row = 0; row < fanOut; row++) {
+        projection += values[row * fanIn + column] * values[row * fanIn + previous];
+      }
+      projection /= previousNormSquared;
+      for (let row = 0; row < fanOut; row++) {
+        values[row * fanIn + column] -= projection * values[row * fanIn + previous];
+      }
+    }
+    let norm = 0;
+    for (let row = 0; row < fanOut; row++) norm += values[row * fanIn + column] ** 2;
+    const scale = gain / Math.max(1e-12, Math.sqrt(norm));
+    for (let row = 0; row < fanOut; row++) values[row * fanIn + column] *= scale;
+  }
+  return values;
+}
+
+function initializeCleanRLPPO(model, outputGain, random) {
+  for (let layer = 0; layer < model.layers; layer++) {
+    const gain = layer === model.layers - 1 ? outputGain : Math.sqrt(2);
+    orthogonal(model.weights[layer], model.sizes[layer], model.sizes[layer + 1], gain, random);
+    model.biases[layer].fill(0);
+  }
+  return model;
+}
+
 export function makeActor(observationSize, width, maxBatch, random) {
-  return new MLP({ sizes: [observationSize, width, width, 4], maxBatch, random });
+  const actor = new MLP({ sizes: [observationSize, width, width, 4], maxBatch, random });
+  actor.actionSquash = "tanh";
+  return actor;
+}
+
+export function makePPOActor(observationSize, width, maxBatch, random) {
+  const mean = initializeCleanRLPPO(
+    new MLP({ sizes: [observationSize, width, width, 2], maxBatch, random }),
+    0.01,
+    random,
+  );
+  const logStd = new Float32Array(2);
+  const logStdGradient = new Float32Array(2);
+  const output = new Float32Array(maxBatch * 4);
+  return {
+    actionSquash: "clip",
+    mean,
+    logStd,
+    logStdGradient,
+    params: [...mean.params, logStd],
+    grads: [...mean.grads, logStdGradient],
+    inputBuffer: () => mean.inputBuffer(),
+    forward(batch) {
+      const means = mean.forward(batch);
+      for (let row = 0; row < batch; row++) {
+        output[row * 4] = means[row * 2];
+        output[row * 4 + 1] = means[row * 2 + 1];
+        output[row * 4 + 2] = logStd[0];
+        output[row * 4 + 3] = logStd[1];
+      }
+      return output;
+    },
+    zeroGrad() {
+      mean.zeroGrad();
+      logStdGradient.fill(0);
+    },
+    backward(gradient, batch) {
+      mean.backward(gradient, batch);
+    },
+    toJSON() {
+      return {
+        type: "ppo-normal",
+        mean: mean.toJSON(),
+        logStd: Array.from(logStd),
+      };
+    },
+  };
 }
 
 export function makeValue(observationSize, width, maxBatch, random) {
-  return new MLP({ sizes: [observationSize, width, width, 1], maxBatch, random });
+  return initializeCleanRLPPO(
+    new MLP({ sizes: [observationSize, width, width, 1], maxBatch, random }),
+    1,
+    random,
+  );
 }
 
 export function makeCritic(observationSize, width, maxBatch, random) {
@@ -56,6 +161,40 @@ export function actorSample(outputs, offset, random, deterministic = false) {
     rawLogStdY,
     logProbability,
   };
+}
+
+export function ppoActorSample(outputs, offset, random, deterministic = false) {
+  const meanX = outputs[offset];
+  const meanY = outputs[offset + 1];
+  const logStdX = outputs[offset + 2];
+  const logStdY = outputs[offset + 3];
+  const epsilonX = deterministic ? 0 : gaussian(random);
+  const epsilonY = deterministic ? 0 : gaussian(random);
+  const actionX = meanX + Math.exp(logStdX) * epsilonX;
+  const actionY = meanY + Math.exp(logStdY) * epsilonY;
+  const logProbability = deterministic ? 0 :
+    -0.5 * (epsilonX * epsilonX + epsilonY * epsilonY + 2 * LOG_2PI) - logStdX - logStdY;
+  return {
+    actionX,
+    actionY,
+    zX: actionX,
+    zY: actionY,
+    epsilonX,
+    epsilonY,
+    meanX,
+    meanY,
+    logStdX,
+    logStdY,
+    rawLogStdX: logStdX,
+    rawLogStdY: logStdY,
+    logProbability,
+  };
+}
+
+export function sampleActor(actor, outputs, offset, random, deterministic = false) {
+  return actor.actionSquash === "clip"
+    ? ppoActorSample(outputs, offset, random, deterministic)
+    : actorSample(outputs, offset, random, deterministic);
 }
 
 export function copyParameters(target, source) {
@@ -110,7 +249,7 @@ export function evaluatePolicy(actor, env, episodes = 5) {
     for (;;) {
       actor.inputBuffer().set(observation, 0);
       const output = actor.forward(1);
-      const sample = actorSample(output, 0, Math.random, true);
+      const sample = sampleActor(actor, output, 0, Math.random, true);
       action[0] = sample.actionX;
       action[1] = sample.actionY;
       const transition = env.step(action);
@@ -125,8 +264,12 @@ export function evaluatePolicy(actor, env, episodes = 5) {
   return { successes, episodes, meanCoverage: coverage / episodes };
 }
 
-export function recordPolicyRollout(actor, env, { random = Math.random, deterministic = true } = {}) {
-  const valuesPerFrame = 10;
+export function recordPolicyRollout(actor, env, {
+  random = Math.random,
+  deterministic = true,
+  estimateValue = () => 0,
+} = {}) {
+  const valuesPerFrame = 12;
   const frames = new Float32Array((env.horizon + 1) * valuesPerFrame);
   const action = new Float32Array(2);
   let observation = env.reset();
@@ -136,7 +279,7 @@ export function recordPolicyRollout(actor, env, { random = Math.random, determin
   let wallContact = false;
   let coverage = env.world.coverage();
 
-  const recordFrame = (sample) => {
+  const recordFrame = (sample, value) => {
     const offset = count * valuesPerFrame;
     frames[offset] = env.world.pusher.x;
     frames[offset + 1] = env.world.pusher.y;
@@ -148,17 +291,20 @@ export function recordPolicyRollout(actor, env, { random = Math.random, determin
     frames[offset + 7] = sample.meanY;
     frames[offset + 8] = sample.logStdX;
     frames[offset + 9] = sample.logStdY;
+    frames[offset + 10] = value;
+    frames[offset + 11] = 0;
     count += 1;
   };
 
   for (;;) {
     actor.inputBuffer().set(observation, 0);
     const output = actor.forward(1);
-    const sample = actorSample(output, 0, random, deterministic);
-    recordFrame(sample);
+    const sample = sampleActor(actor, output, 0, random, deterministic);
+    recordFrame(sample, estimateValue(observation, sample));
     action[0] = sample.actionX;
     action[1] = sample.actionY;
     const transition = env.step(action);
+    frames[(count - 1) * valuesPerFrame + 11] = transition.reward;
     observation = transition.observation;
     totalReturn += transition.reward;
     coverage = transition.coverage;
@@ -166,7 +312,8 @@ export function recordPolicyRollout(actor, env, { random = Math.random, determin
     wallContact = transition.wallContact;
     if (transition.done) {
       actor.inputBuffer().set(observation, 0);
-      recordFrame(actorSample(actor.forward(1), 0, random, deterministic));
+      const finalSample = sampleActor(actor, actor.forward(1), 0, random, deterministic);
+      recordFrame(finalSample, estimateValue(observation, finalSample));
       break;
     }
   }
@@ -178,5 +325,6 @@ export function recordPolicyRollout(actor, env, { random = Math.random, determin
     success,
     wallContact,
     coverage,
+    squashed: actor.actionSquash !== "clip",
   };
 }

@@ -33,7 +33,7 @@
             <p class="eyebrow">Continuous control laboratory</p>
             <h1>Learn from <em>contact.</em></h1>
           </div>
-          <p>Single-frame observation · delta action · PPO and SAC training in a Web Worker</p>
+          <p>Single-frame observation · unit-disk dx/dy action · PPO and SAC training in a Web Worker</p>
         </section>
 
         <section class="rl-workspace" aria-label="Reinforcement learning trainer">
@@ -70,6 +70,20 @@
               <div><span>Final coverage</span><strong id="selectedCoverage">—</strong></div>
               <div><span>Outcome</span><strong id="selectedOutcome">—</strong></div>
             </div>
+
+            <div class="rollout-value-panel">
+              <div class="rollout-value-heading">
+                <div>
+                  <p class="label">Selected rollout</p>
+                  <strong id="valuePlotTitle">Critic value vs rollout step</strong>
+                </div>
+                <div class="plot-legend" aria-hidden="true">
+                  <span><i class="value-swatch"></i><b id="valueLegend">V(s)</b></span>
+                  <span><i class="reward-swatch"></i><b>Reward</b></span>
+                </div>
+              </div>
+              <canvas id="valueCanvas" aria-label="Critic value and reward over the selected rollout"></canvas>
+            </div>
           </article>
 
           <aside class="training-card rl-controls">
@@ -105,8 +119,8 @@
             </div>
 
             <div class="rl-setting">
-              <div><span id="entropyLabel">Entropy bonus</span><output id="entropyOutput">0.020</output></div>
-              <input id="entropySlider" type="range" min="0" max="0.1" step="0.005" value="0.02" aria-label="Entropy bonus" />
+              <div><span id="entropyLabel">Entropy bonus</span><output id="entropyOutput">0.000</output></div>
+              <input id="entropySlider" type="range" min="0" max="0.1" step="0.005" value="0" aria-label="Entropy bonus" />
               <div class="range-ends"><span id="entropyMin">0</span><span id="entropyMax">0.10</span></div>
             </div>
 

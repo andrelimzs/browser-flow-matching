@@ -1,9 +1,9 @@
 // Minimal single-frame RL interface over PushWorld.
 //
 // Observation: the current normalized simulator observation (no frame stack).
-// Action: normalized dx/dy in [-1, 1], scaled to one maximum pusher step.
-// Reward: progress in block position and orientation, 0.1x progress in pusher
-// distance to the goal, final overlap closeness, +1 on completion, -1 when
+// Action: dx/dy projected onto the unit disk, then scaled by MAX_PUSHER_SPEED.
+// Reward: progress in block position and orientation, pusher progress scaled so
+// one full-speed step toward the goal earns +0.01, final overlap closeness, +1 on completion, -1 when
 // the pusher hits a wall, and -10 when the block touches a wall.
 
 import {
@@ -27,6 +27,16 @@ export const CURRICULUM_FINAL_PROGRESS = 0.7;
 export const CURRICULUM_INITIAL_DISTANCE_FRACTION = 0.25;
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+export function cartesianActionToDelta(action, out = new Float32Array(2)) {
+  const rawX = Number.isFinite(action[0]) ? action[0] : 0;
+  const rawY = Number.isFinite(action[1]) ? action[1] : 0;
+  const magnitude = Math.hypot(rawX, rawY);
+  const scale = MAX_PUSHER_SPEED / Math.max(1, magnitude);
+  out[0] = rawX * scale;
+  out[1] = rawY * scale;
+  return out;
+}
 const PUSHER_WALL_MIN = WALL_THICKNESS + PUSHER_RADIUS;
 const PUSHER_WALL_MAX = 1 - PUSHER_WALL_MIN;
 const WALL_EPSILON = 1e-9;
@@ -50,7 +60,7 @@ export class PushTRLEnv {
     seed = 1,
     horizon = 200,
     distanceRewardScale = 1,
-    pusherDistanceRewardScale = distanceRewardScale * 0.1,
+    pusherDistanceRewardScale = 0.01 / MAX_PUSHER_SPEED,
     orientationRewardScale = 1,
     rewardShaping = {},
     curriculum = true,
@@ -75,6 +85,7 @@ export class PushTRLEnv {
     this.distance = 0;
     this.pusherDistance = 0;
     this.orientationError = 0;
+    this.actionDelta = new Float32Array(2);
   }
 
   setTrainingProgress(progress) {
@@ -178,8 +189,7 @@ export class PushTRLEnv {
   }
 
   step(action) {
-    const dx = clamp(action[0], -1, 1) * MAX_PUSHER_SPEED;
-    const dy = clamp(action[1], -1, 1) * MAX_PUSHER_SPEED;
+    const [dx, dy] = cartesianActionToDelta(action, this.actionDelta);
     this.world.step(this.world.pusher.x + dx, this.world.pusher.y + dy, 0);
     this.episodeSteps += 1;
     const distance = this.blockGoalDistance();

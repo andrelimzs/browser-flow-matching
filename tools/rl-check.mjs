@@ -9,18 +9,40 @@ import {
 import { ScriptedExpert } from "../src/pusht/expert.js";
 import {
   CURRICULUM_INITIAL_DISTANCE_FRACTION,
+  cartesianActionToDelta,
   PushTRLEnv,
   RL_ACTION_SIZE,
   RL_OBSERVATION_SIZE,
 } from "../src/pusht/rl/env.js";
-import { recordPolicyRollout } from "../src/pusht/rl/common.js";
-import { trainPPO } from "../src/pusht/rl/ppo.js";
+import { makePPOActor, recordPolicyRollout } from "../src/pusht/rl/common.js";
+import { computeGAE, trainPPO } from "../src/pusht/rl/ppo.js";
 import { trainSAC } from "../src/pusht/rl/sac.js";
 
 const finiteModel = (model) => model.params.every((buffer) => buffer.every(Number.isFinite));
+const initializedActor = makePPOActor(RL_OBSERVATION_SIZE, 16, 1, createRandom(19));
+const outputWeights = initializedActor.mean.weights.at(-1);
+const outputWidth = initializedActor.mean.sizes.at(-2);
+let outputDot = 0;
+let outputNorm0 = 0;
+let outputNorm1 = 0;
+for (let index = 0; index < outputWidth; index++) {
+  outputDot += outputWeights[index] * outputWeights[outputWidth + index];
+  outputNorm0 += outputWeights[index] ** 2;
+  outputNorm1 += outputWeights[outputWidth + index] ** 2;
+}
+if (Math.abs(outputDot) > 1e-7 || Math.abs(Math.sqrt(outputNorm0) - 0.01) > 1e-6 ||
+    Math.abs(Math.sqrt(outputNorm1) - 0.01) > 1e-6) {
+  throw new Error("PPO actor output layer is not orthogonal with gain 0.01");
+}
+const normalizedAction = (dx, dy) => Float32Array.of(dx / MAX_PUSHER_SPEED, dy / MAX_PUSHER_SPEED);
+const decodedAction = cartesianActionToDelta(Float32Array.of(1, 1));
+const diagonal = MAX_PUSHER_SPEED / Math.sqrt(2);
+if (Math.abs(decodedAction[0] - diagonal) > 1e-7 || Math.abs(decodedAction[1] - diagonal) > 1e-7) {
+  throw new Error("diagonal action was not projected onto the unit disk");
+}
 const scaledRewardEnv = new PushTRLEnv({ distanceRewardScale: 3 });
-if (Math.abs(scaledRewardEnv.pusherDistanceRewardScale - 0.3) > 1e-12) {
-  throw new Error("pusher shaping is not 0.1x the block-distance weight");
+if (Math.abs(scaledRewardEnv.pusherDistanceRewardScale * MAX_PUSHER_SPEED - 0.01) > 1e-12) {
+  throw new Error("a full-speed pusher step is not scaled to 0.01");
 }
 const noShapingEnv = new PushTRLEnv({
   seed: 8,
@@ -36,12 +58,28 @@ noShapingEnv.reset();
 const towardGoalX = noShapingEnv.world.goal.x - noShapingEnv.world.pusher.x;
 const towardGoalY = noShapingEnv.world.goal.y - noShapingEnv.world.pusher.y;
 const towardGoalLength = Math.hypot(towardGoalX, towardGoalY);
-const noShapingTransition = noShapingEnv.step(Float32Array.of(
-  towardGoalX / towardGoalLength,
-  towardGoalY / towardGoalLength,
+const noShapingTransition = noShapingEnv.step(normalizedAction(
+  towardGoalX / towardGoalLength * MAX_PUSHER_SPEED,
+  towardGoalY / towardGoalLength * MAX_PUSHER_SPEED,
 ));
 if (noShapingTransition.pusherDistanceProgress <= 0 || noShapingTransition.reward !== 0) {
   throw new Error("disabled reward shaping still changed the reward");
+}
+const pusherShapingEnv = new PushTRLEnv({
+  seed: 8,
+  curriculum: false,
+  rewardShaping: { blockDistance: false, orientation: false, closeness: false },
+});
+pusherShapingEnv.reset();
+const pusherDirectionX = pusherShapingEnv.world.goal.x - pusherShapingEnv.world.pusher.x;
+const pusherDirectionY = pusherShapingEnv.world.goal.y - pusherShapingEnv.world.pusher.y;
+const pusherDirectionLength = Math.hypot(pusherDirectionX, pusherDirectionY);
+const pusherShapingTransition = pusherShapingEnv.step(normalizedAction(
+  pusherDirectionX / pusherDirectionLength * MAX_PUSHER_SPEED,
+  pusherDirectionY / pusherDirectionLength * MAX_PUSHER_SPEED,
+));
+if (Math.abs(pusherShapingTransition.reward - 0.01) > 1e-6) {
+  throw new Error(`full-speed pusher shaping is ${pusherShapingTransition.reward}, expected 0.01`);
 }
 
 // The block starts near the goal, moves to the final task radius by 70%, and
@@ -107,8 +145,7 @@ let totalReward = 0;
 let solved = false;
 for (let step = 0; step < 2200; step++) {
   const [targetX, targetY] = expert.act(env.world);
-  action[0] = (targetX - env.world.pusher.x) / MAX_PUSHER_SPEED;
-  action[1] = (targetY - env.world.pusher.y) / MAX_PUSHER_SPEED;
+  action.set(normalizedAction(targetX - env.world.pusher.x, targetY - env.world.pusher.y));
   const transition = env.step(action);
   observation = transition.observation;
   completionRewards += transition.completionReward;
@@ -125,7 +162,7 @@ const expectedOrientationReward = initialOrientationError - env.orientationError
 console.log(
   `environment: obs ${observation.length}, action ${RL_ACTION_SIZE}, solved ${solved}, ` +
   `completion ${completionRewards}, distance reward ${distanceReward.toFixed(4)}, ` +
-  `pusher reward ${(0.1 * pusherDistanceReward).toFixed(4)}, ` +
+  `pusher reward ${(env.pusherDistanceRewardScale * pusherDistanceReward).toFixed(4)}, ` +
   `orientation reward ${orientationReward.toFixed(4)}, closeness ${finalClosenessReward.toFixed(4)}, ` +
   `total ${totalReward.toFixed(4)}`,
 );
@@ -136,7 +173,7 @@ if (Math.abs(pusherDistanceReward - expectedPusherDistanceReward) > 1e-6) {
 }
 if (Math.abs(orientationReward - expectedOrientationReward) > 1e-6) throw new Error("orientation shaping does not telescope");
 if (Math.abs(totalReward - (1 + finalClosenessReward + expectedDistanceReward +
-    0.1 * expectedPusherDistanceReward + expectedOrientationReward)) > 1e-6) {
+    env.pusherDistanceRewardScale * expectedPusherDistanceReward + expectedOrientationReward)) > 1e-6) {
   throw new Error("combined reward is wrong");
 }
 
@@ -184,7 +221,7 @@ if (!wallTransition?.done || !wallTransition.wallContact || wallTransition.succe
   throw new Error("wall contact did not terminate as a failure");
 }
 const expectedWallReward = wallTransition.wallPenalty + wallTransition.distanceProgress +
-  0.1 * wallTransition.pusherDistanceProgress + wallTransition.orientationProgress;
+  wallEnv.pusherDistanceRewardScale * wallTransition.pusherDistanceProgress + wallTransition.orientationProgress;
 if (wallTransition.wallPenalty !== -1 || Math.abs(wallTransition.reward - expectedWallReward) > 1e-9) {
   throw new Error("wall contact penalty was not summed with shaping");
 }
@@ -240,6 +277,38 @@ for (let index = 0; index < 3; index++) {
 console.log(`critic input-gradient worst error ${worst.toExponential(3)}`);
 if (worst > 2e-4) throw new Error(`critic input-gradient mismatch ${worst}`);
 
+// Reference GAE calculation for two interleaved environments. Env 0 terminates
+// on its second transition, so its trace must not leak into the reset episode;
+// env 1 remains live and bootstraps from its final critic value.
+const gaeRewards = Float32Array.of(1, 10, 2, 20, 3, 30);
+const gaeDones = Uint8Array.of(0, 0, 1, 0, 0, 0);
+const gaeValues = Float32Array.of(0.5, 5, 0.6, 6, 0.7, 7);
+const gaeEnvironments = Uint16Array.of(0, 1, 0, 1, 0, 1);
+const gae = computeGAE({
+  rewards: gaeRewards,
+  dones: gaeDones,
+  values: gaeValues,
+  environmentIndices: gaeEnvironments,
+  bootstrapValues: Float32Array.of(0.8, 8),
+  gamma: 0.9,
+  gaeLambda: 0.5,
+});
+const expectedGAE = [
+  1 + 0.9 * 0.6 - 0.5 + 0.9 * 0.5 * (2 - 0.6),
+  10 + 0.9 * 6 - 5 + 0.9 * 0.5 * (20 + 0.9 * 7 - 6 + 0.9 * 0.5 * (30 + 0.9 * 8 - 7)),
+  2 - 0.6,
+  20 + 0.9 * 7 - 6 + 0.9 * 0.5 * (30 + 0.9 * 8 - 7),
+  3 + 0.9 * 0.8 - 0.7,
+  30 + 0.9 * 8 - 7,
+];
+for (let index = 0; index < expectedGAE.length; index++) {
+  if (Math.abs(gae.advantages[index] - expectedGAE[index]) > 1e-5 ||
+      Math.abs(gae.returns[index] - (expectedGAE[index] + gaeValues[index])) > 1e-5) {
+    throw new Error(`GAE mismatch at interleaved transition ${index}`);
+  }
+}
+console.log("GAE: interleaved environments, terminal trace cut, and final bootstrap match reference");
+
 // Short algorithm smoke runs catch non-finite losses, buffer mistakes and SAC's
 // actor-through-critic gradient wiring. They are not expected to solve the task
 // in a few hundred interactions.
@@ -261,10 +330,26 @@ const ppo = trainPPO({
 console.log(`PPO smoke: ${ppo.steps} steps, finite ${finiteModel(ppo.actor) && finiteModel(ppo.critic)}`);
 if (!finiteModel(ppo.actor) || !finiteModel(ppo.critic)) throw new Error("PPO produced non-finite parameters");
 if (ppoCheckpoints !== 1) throw new Error(`expected one PPO checkpoint, got ${ppoCheckpoints}`);
-const recordedRollout = recordPolicyRollout(ppo.actor, new PushTRLEnv({ seed: 22, horizon: 80 }));
+if (ppo.actor.actionSquash !== "clip" || ppo.actor.logStd.length !== 2) {
+  throw new Error("PPO actor is not an unsquashed Normal with global log standard deviation");
+}
+const recordedRollout = recordPolicyRollout(ppo.actor, new PushTRLEnv({ seed: 22, horizon: 80 }), {
+  estimateValue(observation) {
+    ppo.critic.inputBuffer().set(observation, 0);
+    return ppo.critic.forward(1)[0];
+  },
+});
 console.log(`recorded rollout: ${recordedRollout.count} frames, ${recordedRollout.frames.length} values`);
-if (recordedRollout.frames.length !== recordedRollout.count * 10 || !recordedRollout.frames.every(Number.isFinite)) {
+if (recordedRollout.frames.length !== recordedRollout.count * 12 || !recordedRollout.frames.every(Number.isFinite)) {
   throw new Error("recorded rollout action distribution has the wrong shape or non-finite values");
+}
+if (recordedRollout.squashed) throw new Error("PPO rollout was marked as tanh-squashed");
+let recordedReward = 0;
+for (let frame = 0; frame < recordedRollout.count; frame++) {
+  recordedReward += recordedRollout.frames[frame * 12 + 11];
+}
+if (Math.abs(recordedReward - recordedRollout.return) > 1e-6) {
+  throw new Error("per-frame rewards do not sum to rollout return");
 }
 const sampledRollout = recordPolicyRollout(ppo.actor, new PushTRLEnv({ seed: 23, horizon: 80 }), {
   random: createRandom(24),
@@ -272,8 +357,8 @@ const sampledRollout = recordPolicyRollout(ppo.actor, new PushTRLEnv({ seed: 23,
 });
 let sampledTravel = 0;
 for (let frame = 1; frame < sampledRollout.count; frame++) {
-  const before = (frame - 1) * 10;
-  const after = frame * 10;
+  const before = (frame - 1) * 12;
+  const after = frame * 12;
   sampledTravel += Math.hypot(
     sampledRollout.frames[after] - sampledRollout.frames[before],
     sampledRollout.frames[after + 1] - sampledRollout.frames[before + 1],

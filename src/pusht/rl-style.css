@@ -19,6 +19,17 @@
 .rollout-summary > div { padding: 12px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .rollout-summary span { display: block; margin-bottom: 6px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
 .rollout-summary strong { font-size: 16px; }
+.rollout-value-panel { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.rollout-value-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 10px; }
+.rollout-value-heading .label { margin-bottom: 5px; color: var(--muted); }
+.rollout-value-heading strong { font-size: 15px; }
+.plot-legend { display: flex; gap: 14px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 9px; text-transform: uppercase; }
+.plot-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.plot-legend b { font-weight: 400; }
+.plot-legend i { width: 15px; height: 2px; }
+.value-swatch { background: #1d66db; }
+.reward-swatch { background: #ed6b55; }
+#valueCanvas { display: block; width: 100%; height: 190px; border: 1px solid var(--line); background: #f4f2ec; }
 .rl-controls { min-width: 0; }
 .control-label { margin: 24px 0 9px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
 .rl-setting { display: grid; gap: 8px; margin-top: 15px; padding-top: 14px; border-top: 1px solid var(--line); }

@@ -4,7 +4,7 @@ import { PushWorld, createRandom } from "./sim.js";
 import { createView } from "./render.js";
 
 const $ = (selector) => document.querySelector(selector);
-const ROLLOUT_FRAME_SIZE = 10;
+const ROLLOUT_FRAME_SIZE = 12;
 const BUDGET_MIN = 10_000;
 const BUDGET_MAX = 1_000_000;
 const REWARD_SHAPING_TERMS = ["blockDistance", "pusherDistance", "orientation", "closeness"];
@@ -25,7 +25,7 @@ const state = {
     orientation: true,
     closeness: true,
   },
-  entropyByAlgorithm: { ppo: 0.02, sac: 0.3 },
+  entropyByAlgorithm: { ppo: 0, sac: 0.3 },
   widthByAlgorithm: { ppo: 64, sac: 256 },
   seed: 2026,
   worker: null,
@@ -151,6 +151,114 @@ function drawReturnChart() {
   }
 }
 
+function drawRolloutValueChart() {
+  const canvas = $("#valueCanvas");
+  const context = canvas.getContext("2d");
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  canvas.height = Math.max(1, Math.round(rect.height * dpr));
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  context.clearRect(0, 0, rect.width, rect.height);
+
+  const padding = { left: 48, right: 48, top: 15, bottom: 24 };
+  const plotWidth = Math.max(1, rect.width - padding.left - padding.right);
+  const plotHeight = Math.max(1, rect.height - padding.top - padding.bottom);
+  context.strokeStyle = "rgba(25, 28, 27, .08)";
+  context.lineWidth = 1;
+  for (let line = 0; line <= 4; line += 1) {
+    const y = padding.top + plotHeight * line / 4;
+    context.beginPath();
+    context.moveTo(padding.left, y);
+    context.lineTo(padding.left + plotWidth, y);
+    context.stroke();
+  }
+
+  if (state.selected < 0) {
+    context.fillStyle = "#8a8f89";
+    context.font = '10px "DM Mono", monospace';
+    context.textAlign = "center";
+    context.fillText("Value and reward appear with a logged rollout", rect.width / 2, rect.height / 2 + 4);
+    return;
+  }
+
+  const rollout = state.rollouts[state.selected];
+  const values = [];
+  const rewards = [];
+  for (let frame = 0; frame < rollout.count; frame += 1) {
+    const offset = frame * ROLLOUT_FRAME_SIZE;
+    values.push(rollout.frames[offset + 10]);
+    rewards.push(rollout.frames[offset + 11]);
+  }
+  const range = (series, includeZero = false) => {
+    let minimum = Math.min(...series);
+    let maximum = Math.max(...series);
+    if (includeZero) {
+      minimum = Math.min(0, minimum);
+      maximum = Math.max(0, maximum);
+    }
+    if (minimum === maximum) {
+      const margin = Math.max(0.05, Math.abs(minimum) * 0.1);
+      minimum -= margin;
+      maximum += margin;
+    } else {
+      const margin = (maximum - minimum) * 0.08;
+      minimum -= margin;
+      maximum += margin;
+    }
+    return [minimum, maximum];
+  };
+  const [valueMinimum, valueMaximum] = range(values);
+  const [rewardMinimum, rewardMaximum] = range(rewards, true);
+  const x = (frame) => padding.left + frame / Math.max(1, rollout.count - 1) * plotWidth;
+  const valueY = (value) => padding.top + (valueMaximum - value) / (valueMaximum - valueMinimum) * plotHeight;
+  const rewardY = (reward) => padding.top + (rewardMaximum - reward) / (rewardMaximum - rewardMinimum) * plotHeight;
+
+  const rewardZero = rewardY(0);
+  context.strokeStyle = "rgba(237, 107, 85, .5)";
+  context.lineWidth = Math.max(1, Math.min(3, plotWidth / Math.max(1, rollout.count) * 0.7));
+  rewards.forEach((reward, frame) => {
+    if (reward === 0) return;
+    context.beginPath();
+    context.moveTo(x(frame), rewardZero);
+    context.lineTo(x(frame), rewardY(reward));
+    context.stroke();
+  });
+
+  context.beginPath();
+  values.forEach((value, frame) => {
+    if (frame === 0) context.moveTo(x(frame), valueY(value));
+    else context.lineTo(x(frame), valueY(value));
+  });
+  context.strokeStyle = "#1d66db";
+  context.lineWidth = 2;
+  context.stroke();
+
+  const markerX = x(Math.min(state.frame, rollout.count - 1));
+  context.save();
+  context.setLineDash([3, 4]);
+  context.strokeStyle = "rgba(25, 28, 27, .38)";
+  context.lineWidth = 1;
+  context.beginPath();
+  context.moveTo(markerX, padding.top);
+  context.lineTo(markerX, padding.top + plotHeight);
+  context.stroke();
+  context.restore();
+
+  context.font = '9px "DM Mono", monospace';
+  context.fillStyle = "#1d66db";
+  context.textAlign = "right";
+  context.fillText(valueMaximum.toFixed(2), padding.left - 7, padding.top + 3);
+  context.fillText(valueMinimum.toFixed(2), padding.left - 7, padding.top + plotHeight);
+  context.fillStyle = "#c9513d";
+  context.textAlign = "left";
+  context.fillText(rewardMaximum.toFixed(2), padding.left + plotWidth + 7, padding.top + 3);
+  context.fillText(rewardMinimum.toFixed(2), padding.left + plotWidth + 7, padding.top + plotHeight);
+  context.fillStyle = "#8a8f89";
+  context.textAlign = "center";
+  context.fillText("rollout step", padding.left + plotWidth / 2, rect.height - 7);
+}
+
 function selectRollout(index) {
   if (!state.rollouts.length) return;
   state.selected = Math.max(0, Math.min(state.rollouts.length - 1, index));
@@ -167,7 +275,11 @@ function selectRollout(index) {
   $("#rolloutReturnLabel").textContent = `return ${formatReturn(rollout.return)}`;
   $("#rolloutStatus").textContent = `${state.selected + 1} of ${state.rollouts.length}`;
   $("#rolloutPill").dataset.active = "record";
+  const valueLabel = rollout.algorithm === "sac" ? "min Q(s,a)" : "V(s)";
+  $("#valueLegend").textContent = valueLabel;
+  $("#valuePlotTitle").textContent = `${valueLabel} vs rollout step`;
   drawReturnChart();
+  drawRolloutValueChart();
 }
 
 function addRollout(message) {
@@ -184,6 +296,8 @@ function addRollout(message) {
     wallContact: message.wallContact,
     coverage: message.coverage,
     count: message.count,
+    algorithm: message.progress.algorithm,
+    squashed: message.squashed,
     frames,
     path,
   });
@@ -227,6 +341,7 @@ function resetRun() {
   $("#successMetric").textContent = "0";
   $("#rolloutMetric").textContent = "0";
   drawReturnChart();
+  drawRolloutValueChart();
 }
 
 function stopTraining(message = "Training stopped. Logged rollouts remain available for inspection.") {
@@ -298,6 +413,7 @@ function draw(timestamp) {
       state.frame += 1;
     }
     state.lastFrameAt = timestamp;
+    drawRolloutValueChart();
   }
   const offset = state.frame * ROLLOUT_FRAME_SIZE;
   world.pusher.x = rollout.frames[offset];
@@ -313,6 +429,7 @@ function draw(timestamp) {
       meanY: rollout.frames[offset + 7],
       logStdX: rollout.frames[offset + 8],
       logStdY: rollout.frames[offset + 9],
+      squashed: rollout.squashed,
     },
   });
   requestAnimationFrame(draw);
@@ -514,7 +631,10 @@ $("#rolloutSlider").addEventListener("input", (event) => {
 });
 $("#startButton").addEventListener("click", startTraining);
 $("#stopButton").addEventListener("click", () => stopTraining());
-window.addEventListener("resize", drawReturnChart);
+window.addEventListener("resize", () => {
+  drawReturnChart();
+  drawRolloutValueChart();
+});
 const webMcpLifecycle = registerWebMcpTools();
 window.addEventListener("beforeunload", () => {
   state.worker?.terminate();

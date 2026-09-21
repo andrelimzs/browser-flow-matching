@@ -15,7 +15,7 @@ import { trainSAC } from "../src/pusht/rl/sac.js";
 const algorithm = (process.argv[2] ?? "ppo").toLowerCase();
 const totalSteps = Number(process.argv[3] ?? 100_000);
 const seed = Number(process.env.SEED ?? 2026);
-const width = Number(process.env.WIDTH ?? 128);
+const width = Number(process.env.WIDTH ?? (algorithm === "ppo" ? 64 : 256));
 const horizon = Number(process.env.HORIZON ?? 200);
 const curriculum = process.env.CURRICULUM !== "false";
 if (!Number.isInteger(totalSteps) || totalSteps < 1) throw new Error(`invalid total steps: ${process.argv[3]}`);
@@ -37,7 +37,7 @@ const onProgress = (progress) => {
 };
 
 console.log(
-  `${algorithm.toUpperCase()} · single frame (11) · action dx/dy (2) · reward block progress + 0.1 pusher progress + final closeness, completion +1, pusher wall -1, block wall -10\n` +
+  `${algorithm.toUpperCase()} · single frame (11) · unit-disk action dx/dy (2) · reward block progress + pusher progress (0.01/full step) + final closeness, completion +1, pusher wall -1, block wall -10\n` +
   `seed ${seed} · horizon ${horizon} · width ${width} · curriculum ${curriculum ? "on" : "off"} · steps ${totalSteps.toLocaleString()}`,
 );
 
@@ -59,8 +59,8 @@ if (process.env.OUT) {
     version: 1,
     algorithm,
     observation: "single normalized frame",
-    action: "normalized dx,dy",
-    reward: "block-goal position/orientation progress + 0.1 pusher-goal distance progress + final overlap closeness + completion; pusher wall adds -1 and terminates; block wall adds -10",
+    action: "dx,dy projected onto the unit disk and scaled to max pusher speed",
+    reward: "block-goal position/orientation progress + pusher-goal progress (0.01 for a full-speed step toward goal) + final overlap closeness + completion; pusher wall adds -1 and terminates; block wall adds -10",
     seed,
     totalSteps,
     horizon,

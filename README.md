@@ -92,14 +92,16 @@ The current zero-obstacle diagonal task keeps lift disabled and removes the expe
 
 ## Reinforcement learning baselines
 
-The `rl-policy` branch includes two dependency-free continuous-control baselines. PPO is on-policy with
-GAE and a clipped objective; SAC uses a replay buffer, twin Q-functions, target networks, and a squashed
-Gaussian actor. PPO uses a `0.02` entropy coefficient and SAC uses a fixed `0.3` temperature to sustain
-exploration. Both deliberately use the same minimal task definition:
+The `rl-policy` branch includes two dependency-free continuous-control baselines. PPO follows CleanRL's
+continuous-control setup: separate orthogonally initialized actor and critic networks, a state-independent
+Gaussian log standard deviation, unsquashed Normal samples clipped by the environment, GAE, clipped policy
+and value losses, linear learning-rate annealing, and a default entropy coefficient of `0`. SAC uses a replay
+buffer, twin Q-functions, target networks, and a tanh-squashed Gaussian actor with fixed `0.3` temperature.
+Both deliberately use the same minimal task definition:
 
 - observation: one normalized 11-value simulator frame, with no history or frame stack
-- action: normalized `dx, dy` in `[-1, 1]`, scaled to one `0.017` pusher step
-- reward: progress in block-to-goal center distance, `0.1×` progress in pusher-to-goal distance, plus progress in normalized orientation error; final overlap coverage as a terminal closeness score, `+1` on completion, an additive `-1` penalty with termination when the pusher touches the outer wall, and an additive `-10` whenever the block touches the outer wall
+- action: `dx, dy` projected onto the unit disk, then scaled to at most one `0.017` pusher step (so diagonal and axial commands have the same maximum speed)
+- reward: progress in block-to-goal center distance, pusher-to-goal progress scaled so one full-speed step toward the goal earns `+0.01`, plus progress in normalized orientation error; final overlap coverage as a terminal closeness score, `+1` on completion, an additive `-1` penalty with termination when the pusher touches the outer wall, and an additive `-10` whenever the block touches the outer wall
 - episode horizon: 200 steps by default
 
 With the position curriculum enabled (the browser default), the block begins at 25% of the original
@@ -111,8 +113,9 @@ curriculum to train on the original fixed start from the first episode.
 
 Training is seeded and runs in Node. Set `OUT=policy.json` to save the actor and its evaluation metadata.
 Block position, pusher position, and orientation progress earn positive reward; regress earns the matching
-negative reward, and waiting earns zero. Pusher-to-goal progress has `0.1×` the weight of block-to-goal
-progress. Orientation error is divided by π, bounding its net shaping range to `[-1, 1]`.
+negative reward, and waiting earns zero. A maximum-speed step directly toward or away from the goal earns
+`+0.01` or `-0.01` from pusher shaping. Orientation error is divided by π, bounding its net shaping range
+to `[-1, 1]`.
 At success or timeout, the final shape-overlap coverage is added as a closeness reward. Completion counts
 remain explicit in the CLI output. The browser exposes independent toggles for block distance, pusher
 distance, orientation, and final-closeness shaping; completion and wall rewards always remain active.

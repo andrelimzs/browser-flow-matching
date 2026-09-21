@@ -240,16 +240,22 @@ export function createView(canvas) {
       context.stroke();
     }
 
-    // State-dependent action distribution for RL rollouts. The translucent
-    // shape is the tanh-squashed one-standard-deviation contour in pre-squash
-    // Gaussian space; the spoke shows the deterministic mean action.
+    // Action distribution for RL rollouts. The translucent shape is the
+    // one-standard-deviation contour after applying the algorithm's action
+    // transform; the spoke shows the deterministic mean action.
     if (options.actionDistribution) {
-      const { meanX, meanY, logStdX, logStdY } = options.actionDistribution;
+      const { meanX, meanY, logStdX, logStdY, squashed = true } = options.actionDistribution;
       const centerX = toX(world.pusher.x);
       const centerY = toY(world.pusher.y);
       const radarRadius = toLength(0.085);
       const stdX = Math.exp(logStdX);
       const stdY = Math.exp(logStdY);
+      const actionVector = (rawX, rawY) => {
+        const x = squashed ? Math.tanh(rawX) : rawX;
+        const y = squashed ? Math.tanh(rawY) : rawY;
+        const scale = 1 / Math.max(1, Math.hypot(x, y));
+        return [x * scale, y * scale];
+      };
 
       context.save();
       context.strokeStyle = "rgba(29, 102, 219, .18)";
@@ -266,8 +272,10 @@ export function createView(canvas) {
       const points = 48;
       for (let index = 0; index <= points; index++) {
         const angle = index / points * Math.PI * 2;
-        const actionX = Math.tanh(meanX + stdX * Math.cos(angle));
-        const actionY = Math.tanh(meanY + stdY * Math.sin(angle));
+        const [actionX, actionY] = actionVector(
+          meanX + stdX * Math.cos(angle),
+          meanY + stdY * Math.sin(angle),
+        );
         const x = centerX + actionX * radarRadius;
         const y = centerY - actionY * radarRadius;
         if (index === 0) context.moveTo(x, y);
@@ -280,8 +288,7 @@ export function createView(canvas) {
       context.lineWidth = 1.2;
       context.stroke();
 
-      const actionMeanX = Math.tanh(meanX);
-      const actionMeanY = Math.tanh(meanY);
+      const [actionMeanX, actionMeanY] = actionVector(meanX, meanY);
       const meanPointX = centerX + actionMeanX * radarRadius;
       const meanPointY = centerY - actionMeanY * radarRadius;
       context.beginPath();
